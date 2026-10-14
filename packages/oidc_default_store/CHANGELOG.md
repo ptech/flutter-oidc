@@ -1,3 +1,10 @@
+## 0.2.0+12.ptech.1
+
+ - **FIX**: use `SharedPreferencesAsync` for the non-secure persistence on native platforms. The legacy `SharedPreferences` cache no longer overwrites the keys that other `SharedPreferencesAsync` users write to the same file (Windows, Linux).
+ - **BREAKING**: the `sharedPreferences` constructor parameter (legacy `SharedPreferences`) is replaced by `sharedPreferencesAsync` (`SharedPreferencesAsync`).
+ - **FEAT**: on the default path, `init()` does a one-time, read-only migration of the keys under `storagePrefix` from the legacy store into `SharedPreferencesAsync`. Existing async values are not overwritten, and the legacy store is never written. Back-ported from upstream `oidc_default_store` 1.1.2.
+ - **FIX**: concurrent `init()` calls share one pending initialization.
+
 ## 0.2.0+12
 
  - Update a dependency to the latest release.
