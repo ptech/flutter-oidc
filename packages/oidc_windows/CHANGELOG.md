@@ -1,3 +1,17 @@
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(spm,native): SwiftPM layout migration + conformance fixes; fix Android build. ([47f7bd25](https://github.com/Bdaya-Dev/oidc/commit/47f7bd25feb5d4b7a2e3db67165a44ecdf4dae29))
+ - **FEAT**: implement the session management spec. ([9a133b3b](https://github.com/Bdaya-Dev/oidc/commit/9a133b3bb511c935edeca0762bfc6be365e812f9))
+ - **FEAT**: support logout. ([09504fa3](https://github.com/Bdaya-Dev/oidc/commit/09504fa310605e2d59ce736d7d3cc99ecbbaab13))
+ - **FEAT**: initial version. ([19e5c607](https://github.com/Bdaya-Dev/oidc/commit/19e5c607ffd61ce094b0ffa1ac4950011dae3909))
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+ - **DOCS**: Add openid certification mark ([#240](https://github.com/Bdaya-Dev/oidc/issues/240)). ([89313199](https://github.com/Bdaya-Dev/oidc/commit/8931319937b9c263abae9ac873433dd6bd5fa637))
+ - **BREAKING** **FEAT**: Support WASM ([#253](https://github.com/Bdaya-Dev/oidc/issues/253)). ([8b2931ef](https://github.com/Bdaya-Dev/oidc/commit/8b2931ef64c7b25609db563e3d14bf37f5504922))
+ - **BREAKING** **CHANGE**: all packages. ([743f8f08](https://github.com/Bdaya-Dev/oidc/commit/743f8f0808a1bcc222e14150db59ac0c78c7340d))
+
 ## 1.0.4
 
  - Update a dependency to the latest release.

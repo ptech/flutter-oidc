@@ -1,3 +1,15 @@
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**(oidc_cli): bound the interactive loopback wait with flowTimeoutSeconds ([#369](https://github.com/Bdaya-Dev/oidc/issues/369)) ([#388](https://github.com/Bdaya-Dev/oidc/issues/388)). ([5e9cf93a](https://github.com/Bdaya-Dev/oidc/commit/5e9cf93a5062cd875096ff232eb64c4d3a42ac05))
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(oidc_cli): relax build_runner to avoid Flutter SDK pin conflicts. ([b8697530](https://github.com/Bdaya-Dev/oidc/commit/b86975307bde79bd00ba4b0ddacc558a875ed2f8))
+ - **FEAT**(storage): harden token storage at rest (RFC 9700 §4.9.3). ([76111b4a](https://github.com/Bdaya-Dev/oidc/commit/76111b4a1022a140c0b510e088becaed54835c0f))
+ - **FEAT**(oidc_cli): add provider-agnostic CLI package. ([2598ba4f](https://github.com/Bdaya-Dev/oidc/commit/2598ba4ffa0882fed971b7ecd44c1516bf7bef55))
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+ - **BREAKING** **CHORE**: v1 dependency upgrade + drop the pigeon global-tool wrapper. ([45b62a3e](https://github.com/Bdaya-Dev/oidc/commit/45b62a3ef3f5b42cfb590111c9e37e144bbc11b0))
+
 ## 1.0.4
 
  - Update a dependency to the latest release.

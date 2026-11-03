@@ -1,3 +1,25 @@
+## 3.0.0
+
+> Note: This release has breaking changes.
+
+ - **REFACTOR**: minor lints and refactors. ([5ab9af70](https://github.com/Bdaya-Dev/oidc/commit/5ab9af70140be2a11f54d62a9d93c9c6edc9e554))
+ - **FIX**: await futures returned inside try blocks (unawaited_return_in_try_block). ([452d6ee1](https://github.com/Bdaya-Dev/oidc/commit/452d6ee121674dee760f2d698f2a7d5565ad6600))
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(oidc_core): close 7 P0 spec-audit findings ([#324](https://github.com/Bdaya-Dev/oidc/issues/324)). ([60907e96](https://github.com/Bdaya-Dev/oidc/commit/60907e96f33dce8bf961b26ed43cec20f56e595e))
+ - **FIX**: oidc_default_store init() loads the shared preferences again and does not check if already given in ctor [#226](https://github.com/Bdaya-Dev/oidc/issues/226). ([111b0a98](https://github.com/Bdaya-Dev/oidc/commit/111b0a98e2eb57b32ab3c9ace3d9b543a2683f34))
+ - **FEAT**(oidc_default_store): support the new SharedPreferencesAsync API ([#301](https://github.com/Bdaya-Dev/oidc/issues/301)) ([#390](https://github.com/Bdaya-Dev/oidc/issues/390)). ([0045f623](https://github.com/Bdaya-Dev/oidc/commit/0045f6231cd5e5267520c69342f89e420241fffe))
+ - **FEAT**(storage): harden token storage at rest (RFC 9700 §4.9.3). ([76111b4a](https://github.com/Bdaya-Dev/oidc/commit/76111b4a1022a140c0b510e088becaed54835c0f))
+ - **FEAT**: Enhance OIDC store with manager ID support. ([56f42f2d](https://github.com/Bdaya-Dev/oidc/commit/56f42f2d67fd97c587611870e412de8cb357c4e4))
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+ - **DOCS**: Add openid certification mark ([#240](https://github.com/Bdaya-Dev/oidc/issues/240)). ([89313199](https://github.com/Bdaya-Dev/oidc/commit/8931319937b9c263abae9ac873433dd6bd5fa637))
+ - **BREAKING** **FIX**: hasInit is set to true too early in init() of OidcUserManagerBase ([#275](https://github.com/Bdaya-Dev/oidc/issues/275)). ([d704aa5f](https://github.com/Bdaya-Dev/oidc/commit/d704aa5fe7449051831fc062919712a1c5075a13))
+ - **BREAKING** **FIX**: migrate to simple_secure_storage ([#270](https://github.com/Bdaya-Dev/oidc/issues/270)). ([723560a7](https://github.com/Bdaya-Dev/oidc/commit/723560a7e7d212290205724d7af6799f217ab778))
+ - **BREAKING** **FEAT**(oidc_default_store): bump flutter_secure_storage to ^11 ([#451](https://github.com/Bdaya-Dev/oidc/issues/451)). ([166f394e](https://github.com/Bdaya-Dev/oidc/commit/166f394ed7d937f1098a558b92f325fc52043700))
+ - **BREAKING** **FEAT**(oidc_default_store): use flutter_secure_storage. ([a9441511](https://github.com/Bdaya-Dev/oidc/commit/a9441511a9f27aa742cde2459b0654541b0aa356))
+ - **BREAKING** **FEAT**: Add offline mode events and error handling. ([7479fd15](https://github.com/Bdaya-Dev/oidc/commit/7479fd15cf0029e9b865333709a98363b5119d64))
+ - **BREAKING** **FEAT**: Support WASM ([#253](https://github.com/Bdaya-Dev/oidc/issues/253)). ([8b2931ef](https://github.com/Bdaya-Dev/oidc/commit/8b2931ef64c7b25609db563e3d14bf37f5504922))
+ - **BREAKING** **FEAT**: support hooks ([#228](https://github.com/Bdaya-Dev/oidc/issues/228)). ([f2d9d9c6](https://github.com/Bdaya-Dev/oidc/commit/f2d9d9c692e0cf0baac36f186be337ff62e142df))
+
 ## 2.0.0
 
 > Note: This release has breaking changes.
