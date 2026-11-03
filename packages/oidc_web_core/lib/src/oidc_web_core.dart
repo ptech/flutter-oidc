@@ -1,11 +1,12 @@
 //cspell: disable
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:collection/collection.dart';
 import 'package:logging/logging.dart';
+import 'package:meta/meta.dart';
 import 'package:oidc_core/oidc_core.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:web/web.dart';
 
 /// {@template oidc_web_core}
@@ -14,6 +15,80 @@ import 'package:web/web.dart';
 class OidcWebCore {
   /// {@macro oidc_web_core}
   const OidcWebCore();
+
+  static const _windowCloseCheckInterval = Duration(milliseconds: 250);
+
+  static final _logger = Logger('Oidc.OidcWebCore');
+
+  /// Monotonically increasing suffix for [monitorSessionStatus]'s hidden
+  /// `check_session_iframe` ids, so two concurrently-running monitors never
+  /// share a DOM id (#474). Kept unique (rather than dropped) so each
+  /// monitor's iframe stays individually identifiable in devtools.
+  static int _nextSessionMonitorIframeId = 0;
+
+  /// Version of the structured redirect wire protocol understood by this
+  /// consumer and emitted by the bundled `redirect.html` template.
+  ///
+  /// See `docs/oidc_web_core.md` ("How the page talks to the app") for the full
+  /// message shapes.
+  static const _redirectWireVersion = 2;
+
+  /// Extracts the response URI from a message posted on the redirect
+  /// [BroadcastChannel].
+  ///
+  /// Accepts both wire formats, so an existing (older) copy of `redirect.html`
+  /// keeps working after the package is upgraded:
+  ///  * the structured v2 envelope emitted by the current template —
+  ///    `{"v":2,"type":"redirect","uri":"<full redirect url>"}`, and
+  ///  * a bare redirect URL string emitted by older copied templates.
+  ///
+  /// Returns `null` for anything else — including the app's own `ack` envelope
+  /// (see [_postRedirectAck]) echoed back on the channel — so the caller
+  /// ignores it.
+  static String? _extractRedirectUri(String raw) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      // Not JSON -> a legacy plain redirect URL string.
+      return raw;
+    }
+    if (decoded is Map &&
+        decoded['v'] == _redirectWireVersion &&
+        decoded['type'] == 'redirect') {
+      final uri = decoded['uri'];
+      return uri is String ? uri : null;
+    }
+    // Valid JSON, but not a v2 redirect envelope (e.g. an `ack`).
+    return null;
+  }
+
+  /// Posts the app-side acknowledgement of a processed redirect back on the
+  /// redirect [BroadcastChannel], so the `redirect.html` template can render a
+  /// truthful terminal state (success vs. failure) instead of the hardcoded
+  /// "Operation Successful" it used to show (#116).
+  ///
+  /// Emits `{"v":2,"type":"ack","status":"ok"|"error","message":<string?>}`.
+  /// A fresh channel is opened for the post because the receiving channel used
+  /// during the flow is already torn down by the time processing finishes.
+  static void _postRedirectAck(
+    String broadcastChannel, {
+    required bool ok,
+    String? message,
+  }) {
+    final channel = BroadcastChannel(broadcastChannel);
+    try {
+      final payload = <String, Object?>{
+        'v': _redirectWireVersion,
+        'type': 'ack',
+        'status': ok ? 'ok' : 'error',
+        if (message != null) 'message': message,
+      };
+      channel.postMessage(jsonEncode(payload).toJS);
+    } finally {
+      channel.close();
+    }
+  }
 
   String _calculatePopupOptions(OidcPlatformSpecificOptions_Web options) {
     final h = options.popupHeight;
@@ -28,6 +103,42 @@ class OidcWebCore {
   }
 
   static const _webWindowKey = 'web_window';
+
+  /// Describes what the authorization window is actually doing, for the error
+  /// raised when a redirect never arrives.
+  ///
+  /// `flow_timeout` alone cannot tell a popup the browser refused to open from
+  /// one that opened and never navigated from a provider that rejected the
+  /// request -- three different bugs, one message. The same-origin policy
+  /// answers the first fork for free: reading `location.href` on a window that
+  /// navigated CROSS-ORIGIN throws, while one still sitting on `about:blank`
+  /// reads back fine and proves the navigation never happened.
+  ///
+  /// Never throws. It runs inside an error path, and a probe that can fail
+  /// would replace the diagnosis with a worse failure.
+  @visibleForTesting
+  static String describeAuthWindow(Window authWindow) {
+    try {
+      if (authWindow.closed) {
+        return 'the auth window is closed';
+      }
+      final href = authWindow.location.href;
+      if (href.isEmpty || href == 'about:blank') {
+        return 'the auth window never navigated (still at "$href") -- the '
+            'browser did not follow location.replace, so the provider was '
+            'never asked';
+      }
+      return 'the auth window is same-origin at "$href" -- it did not reach '
+          'the provider';
+    } on Object catch (e) {
+      // Reading location across origins throws, and that is the HEALTHY shape:
+      // the window did navigate to the provider, so the redirect back is what
+      // went missing.
+      return 'the auth window navigated cross-origin (its location is walled '
+          'off: $e) -- it reached the provider, and the redirect back is what '
+          'did not arrive';
+    }
+  }
 
   HTMLElement _getBody() => window.document.body!;
 
@@ -62,23 +173,55 @@ class OidcWebCore {
   }) async {
     final channel = BroadcastChannel(options.broadcastChannel);
     final c = Completer<Uri>();
+    Timer? preparedWindowClosedTimer;
+    var canDetectPreparedWindowClosure = false;
 
     void eventFunction(MessageEvent event) {
-      final data = event.data;
-      if (data is! JSString) {
+      if (c.isCompleted) {
         return;
       }
-      final parsed = Uri.tryParse(data.toDart);
+      final data = event.data;
+      if (!data.isA<JSString>()) {
+        return;
+      }
+      final uriString = _extractRedirectUri((data! as JSString).toDart);
+      if (uriString == null) {
+        return;
+      }
+      final parsed = Uri.tryParse(uriString);
       if (parsed == null) {
         return;
       }
 
       if (state != null) {
-        final (:parameters, responseMode: _) =
-            OidcEndpoints.resolveAuthorizeResponseParameters(
-          responseUri: parsed,
-          resolveResponseModeByKey: OidcConstants_AuthParameters.state,
-        );
+        // The redirect channel is shared by every context on this origin, so
+        // this callback also receives messages it did not cause: a late
+        // redirect from a previous flow, a stray `redirect.html` tab, a
+        // post-logout redirect carrying no `state`.
+        //
+        // `resolveAuthorizeResponseParameters` THROWS when a Uri carries none
+        // of `state`/`error`/`response` in either the query or the fragment
+        // (oidc_core `facade.dart`). Unguarded, that throw escapes a JS event
+        // callback: it cannot fail the flow, so it surfaces as an uncaught
+        // browser error while the response `Completer` below is simply never
+        // completed -- the flow then waits out `flowTimeoutSeconds`, which
+        // defaults to `null`, i.e. forever.
+        //
+        // A message this flow cannot resolve is not this flow's message.
+        // Ignore it (as a state mismatch already is) and keep listening.
+        final Map<String, dynamic> parameters;
+        try {
+          parameters = OidcEndpoints.resolveAuthorizeResponseParameters(
+            responseUri: parsed,
+            resolveResponseModeByKey: OidcConstants_AuthParameters.state,
+          ).parameters;
+        } on OidcException catch (e) {
+          _logger.fine(
+            'Ignoring a message on the redirect channel that carries no '
+            'resolvable authorization response: $e',
+          );
+          return;
+        }
         final incomingState = parameters[OidcConstants_AuthParameters.state];
         //if we give it a state, we expect it to be returned.
         if (incomingState != state) {
@@ -107,11 +250,85 @@ class OidcWebCore {
               'please prepare the window in $_webWindowKey parameter first.',
             );
           }
+          // Logged before the navigation, not after: if the browser refuses
+          // the popup or the tab goes nowhere, this is the only record that
+          // the request was even formed, and what it asked for. 75 conformance
+          // modules failed on this line's far side with no way to tell a
+          // malformed request from a refused one. An authorization request
+          // carries no credentials -- it is handed to the browser in the clear
+          // by construction -- so logging it whole costs nothing.
+          _logger.fine('Navigating the auth window to: $uri');
           preparedWindow.location.replace(uri.toString());
+          preparedWindowClosedTimer = Timer.periodic(_windowCloseCheckInterval, (
+            _,
+          ) {
+            if (c.isCompleted) {
+              return;
+            }
+            if (!preparedWindow.closed) {
+              canDetectPreparedWindowClosure = true;
+              return;
+            }
+            if (!canDetectPreparedWindowClosure) {
+              // COOP can sever the WindowProxy and report `closed == true`
+              // even while the auth window is still open.
+              preparedWindowClosedTimer?.cancel();
+              return;
+            }
+            c.completeError(
+              const OidcException(
+                'The authentication window was closed before the flow completed.',
+                extra: {'reason': 'window_closed'},
+              ),
+            );
+          });
           //listen to response uri.
-          final res = await c.future;
-          if (!preparedWindow.closed) {
-            preparedWindow.close();
+          //
+          // The window-closed poller above is the only other way out of this
+          // await, and it gives up on itself when COOP severs the WindowProxy
+          // (see `canDetectPreparedWindowClosure`). So without a timeout a
+          // user who walks away from the login leaves this future pending
+          // forever. hiddenIframeTimeout does not apply here; it bounds only
+          // the iframe mode below.
+          final flowTimeout = options.flowTimeoutSeconds;
+          final Uri res;
+          try {
+            res = flowTimeout == null || flowTimeout <= 0
+                ? await c.future
+                : await c.future.timeout(
+                    Duration(seconds: flowTimeout),
+                    // Wrapped, not raw. The window_closed path above throws
+                    // OidcException, and every documented failure contract in
+                    // this library promises OidcException -- letting a bare
+                    // TimeoutException out would slip past an app catching
+                    // exactly what the docs tell it to catch.
+                    onTimeout: () {
+                      // Ask the window what it did. Without this the message
+                      // is identical whether the browser refused the popup,
+                      // the tab never navigated, the provider rejected the
+                      // request, or the user walked away -- four bugs, one
+                      // string, which is how 0/75 conformance modules failed
+                      // for a whole investigation without naming a cause.
+                      final windowState = describeAuthWindow(preparedWindow);
+                      throw OidcException(
+                        'The authentication flow timed out after '
+                        '$flowTimeout seconds without a redirect. '
+                        '$windowState.',
+                        extra: {
+                          'reason': 'flow_timeout',
+                          'auth_window': windowState,
+                        },
+                      );
+                    },
+                  );
+          } finally {
+            // Also runs when the flow throws (window closed, or timed out).
+            // Previously these two lines were only reached on success, so an
+            // aborted flow left the auth window open behind the app.
+            preparedWindowClosedTimer.cancel();
+            if (!preparedWindow.closed) {
+              preparedWindow.close();
+            }
           }
           return res;
 
@@ -131,16 +348,22 @@ class OidcWebCore {
           return res;
       }
     } finally {
+      preparedWindowClosedTimer?.cancel();
       channel.close();
     }
   }
 
   Window? _prepareWindow(OidcPlatformSpecificOptions_Web options) {
     return switch (options.navigationMode) {
-      OidcPlatformSpecificOptions_Web_NavigationMode.newPage =>
-        window.open('', '_blank'),
-      OidcPlatformSpecificOptions_Web_NavigationMode.popup =>
-        window.open('', 'oidc_auth_popup', _calculatePopupOptions(options)),
+      OidcPlatformSpecificOptions_Web_NavigationMode.newPage => window.open(
+        '',
+        '_blank',
+      ),
+      OidcPlatformSpecificOptions_Web_NavigationMode.popup => window.open(
+        '',
+        'oidc_auth_popup',
+        _calculatePopupOptions(options),
+      ),
       _ => null,
     };
   }
@@ -150,9 +373,7 @@ class OidcWebCore {
     OidcPlatformSpecificOptions_Web options,
   ) {
     final prepared = _prepareWindow(options);
-    return {
-      if (prepared != null) _webWindowKey: prepared,
-    };
+    return {if (prepared != null) _webWindowKey: prepared};
   }
 
   /// Returns the authorization response.
@@ -171,7 +392,7 @@ class OidcWebCore {
     }
     final isNonePrompt =
         request.prompt?.contains(OidcConstants_AuthorizeRequest_Prompt.none) ??
-            false;
+        false;
     if (options.navigationMode ==
             OidcPlatformSpecificOptions_Web_NavigationMode.hiddenIFrame &&
         !isNonePrompt) {
@@ -189,10 +410,27 @@ class OidcWebCore {
     if (respUri == null) {
       return null;
     }
-    return OidcEndpoints.parseAuthorizeResponse(
-      responseUri: respUri,
-      responseMode: request.responseMode,
-    );
+    try {
+      final response = await OidcEndpoints.parseAuthorizeResponse(
+        responseUri: respUri,
+        responseMode: request.responseMode,
+      );
+      // Structured wire v2 (#116): acknowledge that the app accepted the
+      // response, so `redirect.html` renders success only after the app-side
+      // processing actually succeeded — not unconditionally.
+      _postRedirectAck(options.broadcastChannel, ok: true);
+      return response;
+    } on Object {
+      // The response was delivered but couldn't be processed — an OP error
+      // redirect (RFC 6749 §4.1.2.1), a JARM/`iss` failure, etc. Tell the page
+      // to render an error state instead of success, then surface the failure.
+      _postRedirectAck(
+        options.broadcastChannel,
+        ok: false,
+        message: 'Sign-in could not be completed.',
+      );
+      rethrow;
+    }
   }
 
   /// Returns the end session response for an RP initiated logout request.
@@ -219,18 +457,52 @@ class OidcWebCore {
     if (respUri == null) {
       return null;
     }
-    return OidcEndSessionResponse.fromJson(respUri.queryParameters);
+    // Structured wire v2: acknowledge the processed logout redirect so the page
+    // can render a truthful terminal state.
+    _postRedirectAck(options.broadcastChannel, ok: true);
+    return OidcEndSessionResponse.fromJson(_resolveResponseParameters(respUri));
+  }
+
+  /// Picks the parameter map an interactive response was actually delivered in,
+  /// applying the same query-then-fragment precedence
+  /// [OidcEndpoints.resolveAuthorizeResponseParameters] uses.
+  ///
+  /// [_getResponseUri] already gates a response with that resolver, so reading
+  /// `respUri.queryParameters` alone afterwards made the two halves of one call
+  /// disagree: a response delivered in the fragment passed the `state` check
+  /// and then parsed to an object with every field null.
+  ///
+  /// The mode is taken from the resolver but the parameters are re-read from
+  /// the Uri, so the synthetic `response_mode` key the resolver appends does
+  /// not leak into the response's `src`.
+  static Map<String, String> _resolveResponseParameters(Uri responseUri) {
+    final String mode;
+    try {
+      mode = OidcEndpoints.resolveAuthorizeResponseParameters(
+        responseUri: responseUri,
+        resolveResponseModeByKey: OidcConstants_AuthParameters.state,
+      ).responseMode;
+    } on OidcException {
+      // Neither location carries `state`/`error`/`response`, so there is
+      // nothing to disambiguate. OpenID Connect RP-Initiated Logout 1.0 §3
+      // defines the response on the query, so that is the answer.
+      return responseUri.queryParameters;
+    }
+    return mode == OidcConstants_AuthorizeRequest_ResponseMode.fragment
+        ? Uri(query: responseUri.fragment).queryParameters
+        : responseUri.queryParameters;
   }
 
   /// Listens to incoming front channel logout requests.
   /// returns an empty stream on non-supported platforms.
   Stream<OidcFrontChannelLogoutIncomingRequest>
-      listenToFrontChannelLogoutRequests(
+  listenToFrontChannelLogoutRequests(
     Uri listenOn,
     OidcFrontChannelRequestListeningOptions_Web options,
   ) {
-    final logger =
-        Logger('Oidc.OidcWebCore.listenToFrontChannelLogoutRequests');
+    final logger = Logger(
+      'Oidc.OidcWebCore.listenToFrontChannelLogoutRequests',
+    );
     final channel = BroadcastChannel(options.broadcastChannel);
     StreamController<OidcFrontChannelLogoutIncomingRequest>? streamController;
 
@@ -242,12 +514,12 @@ class OidcWebCore {
       }
 
       final dataJs = event.data;
-      if (dataJs is! JSString) {
+      if (!dataJs.isA<JSString>()) {
         logger.finer('Received non-string data: $dataJs');
         return;
       }
 
-      final data = dataJs.toDart;
+      final data = (dataJs! as JSString).toDart;
       final uri = Uri.tryParse(data);
       if (uri == null) {
         logger.finer('Failed to parse data into uri: $data');
@@ -300,9 +572,7 @@ class OidcWebCore {
       }
       logger.fine('successfully matched data ($uri)');
       sc.add(
-        OidcFrontChannelLogoutIncomingRequest.fromJson(
-          uri.queryParameters,
-        ),
+        OidcFrontChannelLogoutIncomingRequest.fromJson(uri.queryParameters),
       );
     }
 
@@ -330,69 +600,115 @@ class OidcWebCore {
     StreamSubscription<MessageEvent>? messageSub;
     // Timer? timer;
 
-    const iframeId = 'oidc-session-management-iframe';
+    // The iframe THIS monitor instance owns. Every monitor used to share the
+    // fixed id below, so creating or tearing down one monitor's iframe could
+    // delete a *different*, still-running monitor's iframe (#474).
+    // Tracking our own element (rather than re-querying the DOM by id) means
+    // teardown can only ever affect this monitor.
+    HTMLIFrameElement? ownIframe;
+
+    final iframeId =
+        'oidc-session-management-iframe-${_nextSessionMonitorIframeId++}';
     void onMessageReceived(MessageEvent event) {
       final streamController = sc;
-      final iframe = document.getElementById(iframeId) as HTMLIFrameElement?;
+      final iframe = ownIframe;
       final eventOrigin = event.origin;
+      // `window.onMessage` is a single, shared, broadcast stream: every
+      // concurrently-running monitor's listener sees every message posted on
+      // it, including a reply meant for a *different* monitor's iframe (two
+      // monitors can share the same OP origin, e.g. two signed-in accounts).
+      // Matching `event.source` against this monitor's own iframe window --
+      // not just the origin -- is what keeps one monitor from reading
+      // another's replies (#474).
+      // `strictEquals` (JS `===`), not Dart `==`: under DDC, `==` reads a
+      // property off the cross-origin source window and throws SecurityError.
+      final ownWindow = iframe?.contentWindow;
+      final sourceIsOwnIframe =
+          ownWindow != null && event.source.strictEquals(ownWindow).toDart;
       if (iframe == null ||
+          !iframe.isConnected ||
+          !sourceIsOwnIframe ||
           streamController == null ||
           eventOrigin != checkSessionIframe.origin) {
         logger.warning(
           'ignoring received message; '
           'iframe is null ? ${iframe == null}; '
+          'iframe is connected ? ${iframe?.isConnected}; '
+          "event source is this monitor's own iframe ? $sourceIsOwnIframe; "
           'streamController is null ? ${streamController == null}; '
           'eventOrigin is: ($eventOrigin), should be equal to: (${checkSessionIframe.origin}).',
         );
         return;
       }
       final eventDataJs = event.data;
-      if (eventDataJs is! JSString) {
-        logger
-            .warning('Received iframe message was not a string: $eventDataJs');
+      if (!eventDataJs.isA<JSString>()) {
+        logger.warning(
+          'Received iframe message was not a string: $eventDataJs',
+        );
         return;
       }
-      final eventData = eventDataJs.toDart;
+      final eventData = (eventDataJs! as JSString).toDart;
       switch (eventData) {
         case 'error':
           logger.warning('Received error iframe message');
           streamController.add(const OidcErrorMonitorSessionResult());
         case 'changed':
           logger.fine('Received changed iframe message');
-          streamController
-              .add(const OidcValidMonitorSessionResult(changed: true));
+          streamController.add(
+            const OidcValidMonitorSessionResult(changed: true),
+          );
         case 'unchanged':
           logger.fine('Received unchanged iframe message');
-          streamController
-              .add(const OidcValidMonitorSessionResult(changed: false));
+          streamController.add(
+            const OidcValidMonitorSessionResult(changed: false),
+          );
         default:
           logger.warning('Received unknown iframe message: $eventData');
-          streamController
-              .add(OidcUnknownMonitorSessionResult(data: eventData));
+          streamController.add(
+            OidcUnknownMonitorSessionResult(data: eventData),
+          );
       }
     }
 
+    // Completed by `onCancel` if cancellation happens while `onListen` is
+    // still awaiting the iframe's `load`. Without this, removing an iframe
+    // that never fired `load` can leave that wait pending forever -- a
+    // never-completing future holding a reference to the detached iframe and
+    // the whole monitor closure (#474).
+    Completer<void>? cancelledBeforeLoad;
+
     sc = StreamController<OidcMonitorSessionResult>(
       onListen: () async {
-        final iframe =
-            _createHiddenIframe(appendToDocument: false, iframeId: iframeId)
-              ..id = iframeId
-              ..src = checkSessionIframe.toString();
-        final onloadFuture = iframe.onLoad.first;
-        _getBody().append(iframe);
-        await onloadFuture;
+        final localIframe = _createHiddenIframe(
+          appendToDocument: false,
+          iframeId: iframeId,
+        )..src = checkSessionIframe.toString();
+        ownIframe = localIframe;
+        final waitForCancel = Completer<void>();
+        cancelledBeforeLoad = waitForCancel;
+
+        _getBody().append(localIframe);
+        await Future.any<void>([
+          localIframe.onLoad.first,
+          waitForCancel.future,
+        ]);
+
+        if (!identical(ownIframe, localIframe)) {
+          // Cancelled (onCancel already removed `localIframe` and cleared
+          // `ownIframe`) before `load` fired. Stop setup here: no
+          // listener/timer gets attached for an iframe nobody owns anymore.
+          return;
+        }
+
         //start the session iframe
         messageSub = window.onMessage.listen(onMessageReceived);
 
         //send message to iframe
         await timerSub?.cancel();
         logger.info('Starting periodic stream!');
-        timerSub = Stream.periodic(
-          request.interval,
-          (computationCount) => computationCount,
-        ).startWith(-1).listen((_) {
-          final iframe = document.getElementById(iframeId);
-          if (iframe is! HTMLIFrameElement) {
+        void sendCheckSession() {
+          final iframe = ownIframe;
+          if (iframe == null || !iframe.isConnected) {
             return;
           }
           try {
@@ -409,13 +725,27 @@ class OidcWebCore {
             timerSub?.cancel();
             logger.severe("Failed to send postMessage to OP's iframe", e, st);
           }
-        });
+        }
+
+        // Emit once immediately (previously rxdart's startWith(-1)), then on
+        // every interval.
+        sendCheckSession();
+        timerSub = Stream.periodic(
+          request.interval,
+          (computationCount) => computationCount,
+        ).listen((_) => sendCheckSession());
       },
       onCancel: () {
-        //stop the session iframe
+        //stop the session iframe -- only THIS monitor's iframe, never a
+        //different monitor's (#474).
         timerSub?.cancel();
         messageSub?.cancel();
-        document.getElementById(iframeId)?.remove();
+        ownIframe?.remove();
+        ownIframe = null;
+        final waiting = cancelledBeforeLoad;
+        if (waiting != null && !waiting.isCompleted) {
+          waiting.complete();
+        }
       },
       onPause: () {
         timerSub?.pause();

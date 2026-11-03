@@ -22,8 +22,9 @@ class OidcState {
     String? id,
     DateTime? createdAt,
     this.data,
-  })  : id = id ?? const Uuid().v4(),
-        createdAt = createdAt ?? clock.now();
+    this.managerId,
+  }) : id = id ?? const Uuid().v4(),
+       createdAt = createdAt ?? clock.now();
 
   ///
   factory OidcState.fromStorageString(String storageString) {
@@ -54,6 +55,13 @@ class OidcState {
   )
   final String operationDiscriminator;
 
+  @JsonKey(
+    name: OidcConstants_Store.managerId,
+    includeToJson: true,
+    includeFromJson: true,
+  )
+  final String? managerId;
+
   /// custom "state", which can be used by a caller to have "data" round tripped
   ///
   /// it MUST be json encodable.
@@ -82,7 +90,7 @@ class OidcState {
           if (state.createdAt.isBefore(cutoff)) {
             remove = true;
           }
-        } catch (err) {
+        } on Object {
           remove = true;
         }
       } else {
@@ -93,6 +101,10 @@ class OidcState {
         //no need to await
         unawaited(store.remove(OidcStoreNamespace.state, key: key));
         unawaited(store.remove(OidcStoreNamespace.stateResponse, key: key));
+        // #324 item 20: also drop the secureTokens `code_verifier` keyed by
+        // this stale state, so an abandoned flow doesn't leave the secret
+        // behind.
+        unawaited(store.setStateCodeVerifier(state: key, codeVerifier: null));
       }
     }
   }

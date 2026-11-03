@@ -9,7 +9,7 @@ import 'cli_user_manager.dart';
 // https://demo.duendesoftware.com idp from the cli.
 // you can login with google, or with bob/bob, or with alice/alice.
 
-final idp = Uri.parse('https://demo.duendesoftware.com/');
+final Uri idp = Uri.parse('https://demo.duendesoftware.com/');
 const String clientId = 'interactive.public';
 final store = OidcMemoryStore();
 
@@ -36,10 +36,12 @@ void main() async {
   if (user == null) {
     print('failed to get the user.');
   } else {
-    print('user validated!\n'
-        'subject: ${user.claims.subject}\n'
-        'claims: ${user.aggregatedClaims}\n'
-        'userInfo: ${user.userInfo}');
+    print(
+      'user validated!\n'
+      'subject: ${user.claims.subject}\n'
+      'claims: ${user.aggregatedClaims}\n'
+      'userInfo: ${user.userInfo}',
+    );
 
     print('Logging out the user again:');
 

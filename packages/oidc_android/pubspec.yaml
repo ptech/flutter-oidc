@@ -1,12 +1,14 @@
 name: oidc_android
 description: Android implementation of the oidc plugin
-version: 0.7.0
+version: 3.0.1
 repository: https://github.com/Bdaya-Dev/oidc/tree/main/packages/oidc_android
 homepage: https://bdaya-dev.github.io/oidc/
+topics: ["oidc", "openidconnect", "oauth", "authentication"]
+resolution: workspace
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
 
 flutter:
   plugin:
@@ -20,13 +22,10 @@ flutter:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_appauth: ^9.0.0
-  oidc_core: ^0.12.0
-  oidc_flutter_appauth: ^0.6.0
-  oidc_platform_interface: ^0.6.0+4
+  oidc_core: ^4.0.0
+  oidc_platform_interface: ^1.0.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  plugin_platform_interface: ^2.0.0
-  very_good_analysis: ">=5.0.0 <8.0.0"
+  very_good_analysis: ^10.0.0

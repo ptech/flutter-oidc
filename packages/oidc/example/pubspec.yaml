@@ -2,34 +2,60 @@ name: oidc_example
 description: Demonstrates how to use the oidc plugin.
 version: 0.1.0+1
 publish_to: none
-
+resolution: workspace
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.9.0 <4.0.0"
 
 dependencies:
   async: ^2.11.0
+  bdaya_shared_value: ^5.0.0
+  clock: ^1.1.2
+  dio: ^5.3.3
   flutter:
     sdk: flutter
+  flutter_secure_storage: any
   flutter_web_plugins:
     sdk: flutter
-  bdaya_shared_value: ^3.1.3
-  dio: ^5.3.3
-  go_router: ^14.1.4
+  go_router: ^17.0.1
   http: ^1.1.0
   logging: ^1.2.0
   oidc:
     path: ../
-  oidc_core: ^0.12.0
-  oidc_default_store: ^0.2.0+15
-
+  oidc_core: ^4.0.0
+  oidc_default_store: ^2.0.0
 dev_dependencies:
-  flutter_driver:
-    sdk: flutter
+  archive: ^4.0.7
+  # integration_test + flutter_test back the macOS e2e job only
+  # (`flutter test integration_test`); Patrol coverage is unsupported on macOS.
+  # Every other platform (android/iOS/web/linux/windows) runs via patrol_plus
+  # below. flutter_driver is no longer needed: web moved off flutter-drive/DWDS
+  # to the Patrol (Playwright) web runner.
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
-  very_good_analysis: ^6.0.0
+  # patrol_plus: published fork of Patrol (pub.dev) that adds desktop
+  # (linux/windows) test backends and a Playwright-based web runner. The
+  # matching CLI, patrol_cli_plus, is activated globally in CI. Web tests run
+  # via Playwright (no flutter-drive/DWDS), which sidesteps Flutter's DWDS
+  # startup race (flutter/flutter#181357).
+  patrol_plus: ^5.6.1  # >=5.6.1 for the Xcode-26 iOS CI fixes (terminate suppression)
+  very_good_analysis: ^10.0.0
+
+# Patrol CLI config (patrol_cli_plus is activated globally in CI, not depended
+# on here, so its deps don't enter the app's resolution). Tests live in the
+# default `patrol_test/` directory.
+# The key is `patrol_plus`, not `patrol`. patrol_cli_plus reads
+# `yaml['patrol_plus']` and falls back to its default config when absent, so the
+# legacy key silently discards this block along with the uninstall finalizers.
+patrol_plus:
+  app_name: OIDC Example
+  android:
+    package_name: com.bdayadev.oidc.example
+  ios:
+    bundle_id: com.bdayadev.oidc.example
+  macos:
+    bundle_id: com.bdayadev.oidc.example
 
 flutter:
   uses-material-design: true

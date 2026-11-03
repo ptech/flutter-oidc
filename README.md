@@ -1,5 +1,6 @@
 # oidc
 
+[![openid certification](http://openid.net/wordpress-content/uploads/2016/05/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg)](https://openid.net/developers/certified-openid-connect-implementations/)
 
 [![melos](https://img.shields.io/badge/maintained%20with-melos-f700ff.svg?style=flat-square)](https://github.com/invertase/melos)
 [![codecov](https://codecov.io/github/Bdaya-Dev/oidc/graph/badge.svg?token=HSEDM6I7TH)](https://codecov.io/github/Bdaya-Dev/oidc)
@@ -14,6 +15,7 @@ This is a Mono repo of multiple packages:
     The main dart package, it implements the basic openid/oauth specification, except the platform specific parts (like redirection)
  - [oidc](packages/oidc/README.md): builds on top of `oidc_core`, and adds platform-specific parts, this also contains the `UserManager` class.
  - [oidc_default_store](packages/oidc_default_store/README.md): the default `OidcStore` store implementation.
+ - [oidc_cli](packages/oidc_cli/README.md): a provider-agnostic CLI for authenticating against an OIDC provider.
 
 Make sure you read the [![Static Badge](https://img.shields.io/badge/wiki-purple)](https://bdaya-dev.github.io/oidc/) for extra information.
 

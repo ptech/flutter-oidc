@@ -1,6 +1,445 @@
 name: oidc_workspace
+publish_to: none
 
 environment:
-  sdk: '>=2.18.0 <3.0.0'
+  # >=3.41 / Dart 3.11: the SwiftPM (FlutterFramework) plugin layout in
+  # oidc_darwin requires it (see that package's pubspec).
+  sdk: ^3.11.0
+  flutter: '>=3.41.0 <4.0.0'
+
+workspace:
+  - packages/crypto_keys_plus
+  - packages/x509_plus
+  - packages/jose_plus
+  - packages/oidc
+  - packages/oidc/example
+  - packages/oidc_android
+  - packages/oidc_android/example
+  - packages/oidc_cli
+  - packages/oidc_core
+  - packages/oidc_default_store
+  - packages/oidc_desktop
+  - packages/oidc_darwin
+  - packages/oidc_linux
+  - packages/oidc_loopback_listener
+  - packages/oidc_platform_interface
+  - packages/oidc_web
+  - packages/oidc_web/example
+  - packages/oidc_web_core
+  - packages/oidc_web_core/example
+  - packages/oidc_windows
 dev_dependencies:
-  melos: ^6.2.0
+  melos: ^7.1.1
+
+dependency_overrides:
+  matcher: 0.12.18
+
+
+melos:
+  repository: https://github.com/Bdaya-Dev/oidc
+
+  command:
+    bootstrap:
+      runPubGetInParallel: false
+    clean:
+      hooks:
+        post: |
+          melos exec --flutter -- "flutter clean" &&        
+          rm -rf coverage &&
+          rm -rf pubspec.lock &&
+          melos exec --dir-exists coverage -- "rm -rf coverage"
+    # `melos version` bumps each package's pubspec.yaml but never runs
+    # build_runner, so oidc_cli's build_version-generated lib/src/version.dart
+    # lags behind the new version until the next manual generate (issue #416).
+    # This preCommit hook regenerates it and stages it INTO the release commit.
+    # The explicit `git add` is REQUIRED: melos's _gitStageChanges only stages
+    # the changelogs and pubspecs it edits itself, never files a preCommit hook
+    # regenerates -- without it the fresh version.dart is left unstaged and the
+    # release commit ships a stale version, defeating the whole fix.
+    # Single line joined with `&&` (NOT a multi-line `|` block) on purpose:
+    # melos runs hooks via `sh -c 'eval "$MELOS_SCRIPT"'` on POSIX but
+    # `cmd.exe /C %MELOS_SCRIPT%` on Windows, and cmd truncates the command at
+    # the first embedded newline -- a `|` block would silently run only
+    # generate:dart and drop the `git add`, making the fix inert on Windows
+    # (verified empirically against melos 7.8.0). `&&` keeps it one line and
+    # cross-platform, and short-circuits the add if generation fails.
+    version:
+      hooks:
+        preCommit: melos run generate:dart && git add packages/oidc_cli/lib/src/version.dart
+  scripts:
+    pana:
+      run: melos exec -c 1 "pana"
+      description: Run pana on all the projects
+      packageFilters:
+        noPrivate: true
+    generate:dart:
+      run: melos exec -c 1 --depends-on="build_runner" -- "dart run build_runner build --delete-conflicting-outputs"
+      description: Build all generated files for Dart packages in this project.
+
+    generate:native:
+      run: melos exec --scope="oidc_platform_interface" -- "dart run pigeon --input pigeons/oidc_native.dart"
+      description: >-
+        Regenerate the Pigeon native transport (Dart + Kotlin + darwin Swift)
+        from packages/oidc_platform_interface/pigeons/oidc_native.dart. Pigeon is
+        a normal dev-dependency (the v1 analyzer bump allows it), so this is just
+        `dart run pigeon` — no global activation, no manual steps.
+
+    generate:
+      run: |
+        set -e
+        melos run generate:dart
+        melos run generate:native
+      description: Regenerate every generated file (Dart build_runner + native Pigeon).
+
+    analyze: # ------ taken from cfug/dio ------------
+      description: Analyze all packages
+      exec: dart analyze
+    format:
+      description: Format check all packages
+      exec: dart format --set-exit-if-changed .
+    format:fix:
+      description: Format all packages
+      exec: dart format .
+
+    test:
+      name: All tests
+      run: |
+        set -e
+        melos run test:vm
+        TEST_PLATFORM=chrome melos run test:web
+        TEST_PLATFORM=firefox melos run test:web
+        melos run test:flutter
+    test:vm:
+      name: Dart VM tests
+      # Explicit `melos exec -c 2` (a `run:` script invoking melos exec
+      # itself), not the plain `exec:` shorthand -- same proven pattern the
+      # `pana` script above already uses (`run: melos exec -c 1 "pana"`).
+      # An `exec: {concurrency, command}` map form exists in melos's source
+      # (confirmed in the melos-v8.9.0 tag this repo's CI actually
+      # activates) but threw `MissingScriptCommandException` live in CI
+      # (run 37502004205) despite matching that source exactly -- not
+      # trusted further here. Flags replicate the packageFilters below
+      # exactly (melos exec supports the same filters as CLI options):
+      # --no-flutter, --dir-exists=test, --ignore="*web*".
+      #
+      # concurrency: 2 -- defense-in-depth, not a proven root-cause fix.
+      # Without it, melos exec defaults to `Platform.numberOfProcessors`
+      # concurrent packages, each opening its own VM-service websocket for
+      # `--coverage=coverage/vm`. CI run 37486189186's unit_core (beta) job
+      # hung 85+ minutes in this exact script after x509_plus's VM-service
+      # websocket hit "Connection reset by peer" mid-run: every package
+      # (including the last, oidc_core) had already printed its own
+      # "N tests passed" summary, but melos's exec wrapper never returned,
+      # and job cancellation found an orphaned `dart:test.dart-` process at
+      # cleanup. This concurrency formula is unchanged by the CI
+      # unit_tests job split (same runner, same package set, same formula
+      # before and after -- see .github/workflows/tests.yaml's unit_core
+      # job), and the signature did not reproduce across several sampled
+      # historical runs (pre- and post-split), so it's a rare, intermittent
+      # race rather than something the split caused. Lowering concurrency
+      # here reduces how many concurrent VM-service sockets this step ever
+      # opens, which plausibly lowers the odds of hitting whatever causes
+      # the reset-then-hang, at a modest cost to this step's own wall time
+      # for its 6 small-to-medium packages (not worth doing for every exec
+      # script -- only this one opens VM-service connections for coverage).
+      run: |
+        if [ "$TARGET_DART_SDK" = "min" ]; then
+          melos exec -c 2 --no-flutter --dir-exists=test --ignore="*web*" -- "dart test --chain-stack-traces"
+        else
+          melos exec -c 2 --no-flutter --dir-exists=test --ignore="*web*" -- "dart test --coverage=coverage/vm --chain-stack-traces"
+        fi
+    test:web:
+      name: Dart Web tests
+      run: |
+        set -e
+        melos run test:web:chrome
+        melos run test:web:firefox
+    test:web:chrome:
+      name: Dart Web tests in chrome
+      # test:web:single covers every web package EXCEPT jose_plus (and oidc_cli).
+      # jose_plus runs per-file directly in the workflow (a shell loop, not a
+      # melos exec -- melos wraps exec scripts in double quotes and runs them
+      # through `sh -c 'eval "$MELOS_SCRIPT"'`, so the outer shell expands
+      # script-internal variables like the `$f` loop variable to empty one
+      # layer too early). See .github/workflows/tests.yaml.
+      run: melos run test:web:single
+      env:
+        TEST_PLATFORM: chrome
+        WITH_WASM: false
+    test:web:firefox:
+      name: Dart Web tests in firefox
+      run: melos run test:web:single
+      env:
+        TEST_PLATFORM: firefox
+        MOZ_HEADLESS: "1"
+        WITH_WASM: false
+    test:web:pr:chrome:
+      name: PR-scoped Dart Web tests in chrome
+      run: melos run test:web:pr:single
+      env:
+        TEST_PLATFORM: chrome
+        WITH_WASM: false
+    test:web:pr:firefox:
+      name: PR-scoped Dart Web tests in firefox
+      run: melos run test:web:pr:single
+      env:
+        TEST_PLATFORM: firefox
+        MOZ_HEADLESS: "1"
+        WITH_WASM: false
+    test:web:pr:single:
+      name: PR-scoped Dart Web tests in a browser
+      # NOTE: CI does NOT invoke this script -- the workflow's PR-scope
+      # browser steps run the same dart test command directly (see
+      # .github/workflows/tests.yaml, which explains why the melos layers
+      # had to go there). Keep the command below in sync with those steps.
+      # This script remains the local/one-shot way to run the PR scope.
+      # Per-PR browser testing runs ONLY the packages whose lib code is
+      # genuinely platform-divergent (js-interop / web-conditional imports).
+      # Everything else is platform-neutral pure Dart: its browser runs
+      # duplicate the VM signal while paying one dart2js compile PER TEST
+      # FILE (~30-60s each on CI; oidc_core alone is 60+ files, so the old
+      # full sweep spent the better part of an hour per browser per matrix
+      # leg just compiling). The full sweep still runs on main pushes via
+      # test:web:chrome / test:web:firefox.
+      # --concurrency=1 and NO --coverage: three consecutive CI runs wedged
+      # AFTER every test passed -- the runner reached a fully successful end
+      # and never exited, idling from the last passing test until an outer
+      # timeout killed it (runs 29146393931/29148902320/29150605150, both
+      # browsers). The post-success phase is browser/suite teardown plus
+      # (Chrome-only) coverage collection; dart-lang/test#2294 documents a
+      # multi-suite post-success exit hang with --concurrency=1 as the
+      # workaround, and PR runs don't need browser coverage anyway (codecov
+      # gets it from the full sweep on main pushes).
+      # --suite-load-timeout 4m: suite loads default to NO timeout at all
+      # (test 1.31: suiteLoadTimeout falls back to Timeout.none), so a
+      # load-phase wedge would otherwise also hang forever; five ~10s suite
+      # loads make 4m generous. No --timeout override: tests are sub-second,
+      # so the 30s default bounds mid-test hangs. The workflow adds
+      # step-level timeout-minutes as the backstop for anything else.
+      exec: |
+        set -e
+        dart test --suite-load-timeout 4m --concurrency=1 --platform ${TEST_PLATFORM} --chain-stack-traces
+      packageFilters:
+        scope:
+          - oidc_web_core
+    test:web:single:
+      name: Dart Web tests in a browser
+      env:
+        WITH_WASM: false
+      # NO --coverage. Root-caused 2026-07-12 (issue #372): collecting browser
+      # coverage across MULTIPLE suites in one `dart test` process wedges the
+      # Chrome DevTools/V8 channel. package:test enables detailed precise
+      # coverage once on a shared Chrome context (test 1.31 chrome.dart:190,
+      # Profiler.startPreciseCoverage detailed:true) and gathers per-suite; the
+      # accumulating state hangs a later suite's message dispatch. Measured on
+      # a clean worktree of main: multi-suite + --coverage hangs 33% (default
+      # concurrency) to 93% (--concurrency=1, WORSE -- so concurrency is not the
+      # trigger); multi-suite WITHOUT --coverage: 0/15; single-suite WITH
+      # --coverage: 0/15, then 1774/1774 clean under a sustained soak. So this
+      # full sweep is TEST SIGNAL ONLY (all web packages, both browsers), and
+      # oidc_web_core browser coverage -- the only web-divergent package, so the
+      # only one whose browser coverage isn't a duplicate of its VM coverage --
+      # is collected per-file (single-suite) by a workflow shell loop (see
+      # .github/workflows/tests.yaml).
+      # --timeout 60m: jose_plus's crypto tests are legitimately slow under
+      # dart2js. --suite-load-timeout 2h: package:test 1.31 puts NO timeout on
+      # suite loads by default (suiteLoadTimeout falls back to Timeout.none), so
+      # a wedged browser suite load hangs silently until GitHub's 6h job limit
+      # (run 29118828702). The bound must clear the worst honest wait: the load
+      # timer keeps running while suites queue behind jose's ~55min crypto
+      # executors, so a small bound false-fails healthy suites (a 4m bound
+      # failed 8 of them in run 29140552735). Deliberately NO --ignore-timeouts.
+      # WEB_EXCLUDE_TAGS: passed through to `dart test --exclude-tags`.
+      # jose_plus tags its crypto-executor suites (keygen/sign/encrypt) as
+      # slow-web-crypto (see packages/jose_plus/dart_test.yaml) because they
+      # take ~55min per browser under dart2js's ~200x slower BigInt (#371);
+      # while they run, other suites' loads starve. CI sets this to
+      # slow-web-crypto for pull_request events only, so PR web runs skip
+      # them while VM runs (which always execute every tag) and main-branch
+      # pushes keep full web crypto signal.
+      exec: |
+        # set -e: without it this script's exit status is that of its LAST
+        # statement -- the WITH_WASM if-block, which is 0 whenever WITH_WASM
+        # != true -- so a `dart test` failure was silently discarded and the
+        # CI step stayed green (issue #353: 27 web test failures hidden).
+        set -e
+        if [ "$TARGET_DART_SDK" = "min" ]; then
+          dart test --timeout 60m --platform ${TEST_PLATFORM} --chain-stack-traces ${WEB_EXCLUDE_TAGS:+--exclude-tags "$WEB_EXCLUDE_TAGS"}
+        else
+          dart test --timeout 60m --suite-load-timeout 2h --platform ${TEST_PLATFORM} --chain-stack-traces ${WEB_EXCLUDE_TAGS:+--exclude-tags "$WEB_EXCLUDE_TAGS"}
+          if [ "$WITH_WASM" = "true" ]; then
+            dart test --timeout 60m --suite-load-timeout 2h --platform ${TEST_PLATFORM} --chain-stack-traces --compiler=dart2wasm ${WEB_EXCLUDE_TAGS:+--exclude-tags "$WEB_EXCLUDE_TAGS"}
+          fi
+        fi
+      packageFilters:
+        dirExists: test
+        flutter: false
+        ignore:
+          - oidc_cli
+          # jose_plus is browser-tested per-file directly in the workflow (see
+          # .github/workflows/tests.yaml), NOT here. Root-caused 2026-07-12
+          # (#372): jose_plus's multi-suite Firefox `dart test` completes ALL
+          # suites, prints the passing summary, then never exits (post-success
+          # exit hang, dart-lang/test#2294 class), wedging the full sweep until
+          # the job timeout. It is jose-specific and multi-suite: every OTHER web
+          # package finishes multi-suite on Firefox, and 15/16 jose suites exit
+          # cleanly run alone (the 16th, jwa, is merely slow pure-Dart RSA keygen,
+          # not a hang). One suite per process sidesteps it. The per-file loop
+          # lives in the workflow because melos exec interpolates $VAR and
+          # clobbers the shell loop variable `$f` to empty.
+          - jose_plus
+    remove_dart_test_yaml:
+      name: Remove dart_test.yaml
+      run: find . -type f -name 'dart_test.yaml' -delete
+    test:flutter:
+      name: Flutter tests
+      exec: flutter test --coverage --branch-coverage
+      packageFilters:
+        flutter: true
+        dirExists: test
+        ignore:
+          - "*example*"
+    test:oidc_web:chrome:
+      name: oidc_web browser-platform suite (Chrome)
+      # #370: lib/oidc_web.dart (the real OidcWeb plugin class) imports
+      # oidc_web_core -> package:web (dart:js_interop), so it only compiles
+      # for a browser target. Plain `flutter test` (test:flutter above) runs
+      # on the VM ("tester") platform by default, so
+      # test/library_surface_test.dart's `@TestOn('chrome')` suite is
+      # silently skipped there (0 tests loaded, no failure) and
+      # oidc_web.dart has never appeared in any CI unit report.
+      # `flutter test -d chrome` does NOT fix this -- verified empirically:
+      # `-d`/`--device-id` is ignored by `flutter test`, which still spawns
+      # the native `flutter_tester` process (confirmed via `-v`: it launches
+      # `flutter_tester.exe`, never a browser) regardless of the device
+      # given, so the chrome-tagged file stays excluded exactly as before.
+      # `--platform chrome` is the only invocation that actually threads a
+      # browser Runtime through suite-load filtering (flutter_tools'
+      # FlutterWebPlatform registers `SuitePlatform(Runtime.chrome)`) --
+      # confirmed locally: with this flag, library_surface_test.dart reaches
+      # "loading ...", which it never does under `-d chrome`. `flutter test
+      # --help -v` marks the flag "(deprecated) ... intended for testing the
+      # Flutter framework itself and may be removed at any time", but there
+      # is no non-deprecated alternative today.
+      # On a Windows dev machine this flag can hang after launching Chrome --
+      # a long-standing, Windows-only flutter_tools bug (flutter/flutter
+      # #162798, #44583, #118778; reproducible with a bare `flutter create`
+      # app, no project code involved). This job runs on ubuntu-latest, not
+      # the affected platform.
+      # flutter_tools' web test Chrome launcher (web/chrome.dart) adds its
+      # own `--no-sandbox --headless` flags automatically, so (unlike the
+      # `dart test --platform chrome` steps elsewhere in this workflow) no
+      # CHROME_FLAGS wiring is needed here.
+      # One suite file today (library_surface_test.dart); the package's
+      # other test file (oidc_web_test.dart) has no @TestOn restriction and
+      # loads fine alongside it under Runtime.chrome, so a single
+      # non-per-file invocation covers the package -- no jose_plus/
+      # oidc_web_core-style per-file loop needed.
+      exec: flutter test --platform chrome
+      packageFilters:
+        scope:
+          - oidc_web
+    integration_test:android:
+      name: Flutter Android Integration tests
+      exec: flutter test integration_test --coverage --coverage-package oidc* --branch-coverage -d android --coverage-path coverage/android-coverage.info --dart-define=CI=true
+      packageFilters:
+        flutter: true
+        dirExists:
+          - integration_test
+          - android
+    integration_test:ios:
+      name: Flutter iOs Integration tests
+      exec: flutter test integration_test --coverage --coverage-package oidc* --branch-coverage --ignore-timeouts -d iPhone --coverage-path coverage/ios-coverage.info --dart-define=CI=true
+      packageFilters:
+        flutter: true
+        dirExists:
+          - integration_test
+          - ios
+    integration_test:macos:
+      name: Flutter MacOs Integration tests
+      exec: flutter test integration_test --coverage --branch-coverage --coverage-package oidc* -d macos --coverage-path coverage/macos-coverage.info --dart-define=CI=true
+      packageFilters:
+        flutter: true
+        dirExists:
+          - integration_test
+          - macos
+    integration_test:linux:
+      name: Flutter Linux Integration tests
+      exec: xvfb-run flutter test integration_test --coverage --branch-coverage --coverage-package oidc* -d linux --coverage-path coverage/linux-coverage.info --dart-define=CI=true
+      packageFilters:
+        flutter: true
+        dirExists:
+          - integration_test
+          - linux
+    integration_test:windows:
+      name: Flutter Windows Integration tests
+      exec: flutter test integration_test --coverage --branch-coverage --coverage-package oidc* -d windows --coverage-path coverage/windows-coverage.info --dart-define=CI=true
+      packageFilters:
+        flutter: true
+        dirExists:
+          - integration_test
+          - windows
+
+    test:coverage:
+      name: Run all tests and combine coverage
+      run: |
+        set -e
+        melos run test
+        melos run coverage:format
+
+    upgrade:dart:
+      name: Upgrade Dart package deps
+      exec: dart pub upgrade
+      packageFilters:
+        flutter: false
+
+    upgrade:flutter:
+      name: Upgrade Flutter package deps
+      exec: flutter pub upgrade
+      packageFilters:
+        flutter: true
+
+    coverage:clean:
+      name: Clear coverage
+      exec: rm -rf coverage
+
+    coverage:format:
+      name: Format coverage
+      run: |
+        set -e
+        dart pub global activate coverage
+        melos run coverage:format:package
+
+    coverage:format:package:
+      name: Format coverage for each package
+      # --check-ignore: honor // coverage:ignore-file / ignore-start markers in
+      # pure-Dart packages, matching what flutter test does natively for the
+      # Flutter packages (evidence: ignore-marked platform.dart never appears
+      # in their lcov). Without it the two halves of the repo obey different
+      # ignore semantics.
+      exec: dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib --check-ignore
+      packageFilters:
+        # Dart-only. `dart test --coverage=<dir>` writes VM hitmap JSON that
+        # still needs format_coverage to become lcov; `flutter test --coverage`
+        # already writes coverage/lcov.info directly. Running format_coverage
+        # over a Flutter package's coverage/ dir finds no .json, exits 0, and
+        # truncates that lcov.info to 0 bytes -- silently discarding every
+        # Flutter package's unit coverage before it is ever uploaded.
+        flutter: false
+        dirExists: coverage
+
+    coverage:combine:
+      name: Combine & convert coverage report
+      run: |
+        set -e
+        rm -rf coverage
+        dart pub global activate combine_coverage
+        dart pub global activate remove_from_coverage
+        melos run coverage:format
+        dart pub global run combine_coverage --repo-path=$pwd
+        dart pub global run remove_from_coverage:remove_from_coverage -f coverage/lcov.info -r '\.g\.dart$' -r 'oidc_cli/lib/src/version\.dart$'
+
+    oidc:activate:
+      name: Activate OIDC CLI locally
+      run: dart pub global activate --source path packages/oidc_cli
+

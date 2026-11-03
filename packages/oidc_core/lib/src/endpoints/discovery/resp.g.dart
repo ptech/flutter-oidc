@@ -16,13 +16,16 @@ abstract class _$OidcProviderMetadataCWProxy {
   OidcProviderMetadata jwksUri(Uri? jwksUri);
 
   OidcProviderMetadata responseTypesSupported(
-      List<String>? responseTypesSupported);
+    List<String>? responseTypesSupported,
+  );
 
   OidcProviderMetadata subjectTypesSupported(
-      List<String>? subjectTypesSupported);
+    List<String>? subjectTypesSupported,
+  );
 
   OidcProviderMetadata idTokenSigningAlgValuesSupported(
-      List<String>? idTokenSigningAlgValuesSupported);
+    List<String>? idTokenSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata tokenEndpoint(Uri? tokenEndpoint);
 
@@ -33,32 +36,40 @@ abstract class _$OidcProviderMetadataCWProxy {
   OidcProviderMetadata scopesSupported(List<String>? scopesSupported);
 
   OidcProviderMetadata responseModesSupported(
-      List<String>? responseModesSupported);
+    List<String>? responseModesSupported,
+  );
 
   OidcProviderMetadata grantTypesSupported(List<String>? grantTypesSupported);
 
   OidcProviderMetadata acrValuesSupported(List<String>? acrValuesSupported);
 
   OidcProviderMetadata idTokenEncryptionAlgValuesSupported(
-      List<String>? idTokenEncryptionAlgValuesSupported);
+    List<String>? idTokenEncryptionAlgValuesSupported,
+  );
 
   OidcProviderMetadata requestObjectSigningAlgValuesSupported(
-      List<String>? requestObjectSigningAlgValuesSupported);
+    List<String>? requestObjectSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata requestObjectEncryptionAlgValuesSupported(
-      List<String>? requestObjectEncryptionAlgValuesSupported);
+    List<String>? requestObjectEncryptionAlgValuesSupported,
+  );
 
   OidcProviderMetadata requestObjectEncryptionEncValuesSupported(
-      List<String>? requestObjectEncryptionEncValuesSupported);
+    List<String>? requestObjectEncryptionEncValuesSupported,
+  );
 
   OidcProviderMetadata tokenEndpointAuthSigningAlgValuesSupported(
-      List<String>? tokenEndpointAuthSigningAlgValuesSupported);
+    List<String>? tokenEndpointAuthSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata tokenEndpointAuthMethodsSupported(
-      List<String>? tokenEndpointAuthMethodsSupported);
+    List<String>? tokenEndpointAuthMethodsSupported,
+  );
 
   OidcProviderMetadata displayValuesSupported(
-      List<String>? displayValuesSupported);
+    List<String>? displayValuesSupported,
+  );
 
   OidcProviderMetadata claimTypesSupported(List<String>? claimTypesSupported);
 
@@ -67,26 +78,36 @@ abstract class _$OidcProviderMetadataCWProxy {
   OidcProviderMetadata serviceDocumentation(Uri? serviceDocumentation);
 
   OidcProviderMetadata claimsLocalesSupported(
-      List<String>? claimsLocalesSupported);
+    List<String>? claimsLocalesSupported,
+  );
 
   OidcProviderMetadata uiLocalesSupported(List<String>? uiLocalesSupported);
 
   OidcProviderMetadata pushedAuthorizationRequestEndpoint(
-      Uri? pushedAuthorizationRequestEndpoint);
+    Uri? pushedAuthorizationRequestEndpoint,
+  );
 
   OidcProviderMetadata claimsParameterSupported(bool? claimsParameterSupported);
 
+  OidcProviderMetadata authorizationResponseIssParameterSupported(
+    bool? authorizationResponseIssParameterSupported,
+  );
+
   OidcProviderMetadata requestParameterSupported(
-      bool? requestParameterSupported);
+    bool? requestParameterSupported,
+  );
 
   OidcProviderMetadata requireRequestUriRegistration(
-      bool? requireRequestUriRegistration);
+    bool? requireRequestUriRegistration,
+  );
 
   OidcProviderMetadata requestUriParameterSupported(
-      bool? requestUriParameterSupported);
+    bool? requestUriParameterSupported,
+  );
 
   OidcProviderMetadata requirePushedAuthorizationRequests(
-      bool? requirePushedAuthorizationRequests);
+    bool? requirePushedAuthorizationRequests,
+  );
 
   OidcProviderMetadata opPolicyUri(Uri? opPolicyUri);
 
@@ -96,43 +117,69 @@ abstract class _$OidcProviderMetadataCWProxy {
 
   OidcProviderMetadata endSessionEndpoint(Uri? endSessionEndpoint);
 
+  OidcProviderMetadata frontchannelLogoutSupported(
+    bool? frontchannelLogoutSupported,
+  );
+
+  OidcProviderMetadata frontchannelLogoutSessionSupported(
+    bool? frontchannelLogoutSessionSupported,
+  );
+
+  OidcProviderMetadata backchannelLogoutSupported(
+    bool? backchannelLogoutSupported,
+  );
+
+  OidcProviderMetadata backchannelLogoutSessionSupported(
+    bool? backchannelLogoutSessionSupported,
+  );
+
   OidcProviderMetadata revocationEndpoint(Uri? revocationEndpoint);
 
   OidcProviderMetadata revocationEndpointAuthMethodsSupported(
-      List<String>? revocationEndpointAuthMethodsSupported);
+    List<String>? revocationEndpointAuthMethodsSupported,
+  );
 
   OidcProviderMetadata revocationEndpointAuthSigningAlgValuesSupported(
-      List<String>? revocationEndpointAuthSigningAlgValuesSupported);
+    List<String>? revocationEndpointAuthSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata introspectionEndpoint(Uri? introspectionEndpoint);
 
   OidcProviderMetadata introspectionEndpointAuthMethodsSupported(
-      List<String>? introspectionEndpointAuthMethodsSupported);
+    List<String>? introspectionEndpointAuthMethodsSupported,
+  );
 
   OidcProviderMetadata introspectionEndpointAuthSigningAlgValuesSupported(
-      List<String>? introspectionEndpointAuthSigningAlgValuesSupported);
+    List<String>? introspectionEndpointAuthSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata codeChallengeMethodsSupported(
-      List<String>? codeChallengeMethodsSupported);
+    List<String>? codeChallengeMethodsSupported,
+  );
 
   OidcProviderMetadata idTokenEncryptionEncValuesSupported(
-      List<String>? idTokenEncryptionEncValuesSupported);
+    List<String>? idTokenEncryptionEncValuesSupported,
+  );
 
   OidcProviderMetadata userinfoSigningAlgValuesSupported(
-      List<String>? userinfoSigningAlgValuesSupported);
+    List<String>? userinfoSigningAlgValuesSupported,
+  );
 
   OidcProviderMetadata userinfoEncryptionAlgValuesSupported(
-      List<String>? userinfoEncryptionAlgValuesSupported);
+    List<String>? userinfoEncryptionAlgValuesSupported,
+  );
 
   OidcProviderMetadata userinfoEncryptionEncValuesSupported(
-      List<String>? userinfoEncryptionEncValuesSupported);
+    List<String>? userinfoEncryptionEncValuesSupported,
+  );
 
-  /// This function **does support** nullification of nullable fields. All `null` values passed to `non-nullable` fields will be ignored. You can also use `OidcProviderMetadata(...).copyWith.fieldName(...)` to override fields one at a time with nullification support.
+  /// Creates a new instance with the provided field values.
+  /// Passing `null` to a nullable field nullifies it, while `null` for a non-nullable field is ignored. To update a single field use `OidcProviderMetadata(...).copyWith.fieldName(value)`.
   ///
-  /// Usage
+  /// Example:
   /// ```dart
   /// OidcProviderMetadata(...).copyWith(id: 12, name: "My name")
-  /// ````
+  /// ```
   OidcProviderMetadata call({
     Map<String, dynamic> src,
     Uri? issuer,
@@ -162,6 +209,7 @@ abstract class _$OidcProviderMetadataCWProxy {
     List<String>? uiLocalesSupported,
     Uri? pushedAuthorizationRequestEndpoint,
     bool? claimsParameterSupported,
+    bool? authorizationResponseIssParameterSupported,
     bool? requestParameterSupported,
     bool? requireRequestUriRegistration,
     bool? requestUriParameterSupported,
@@ -170,6 +218,10 @@ abstract class _$OidcProviderMetadataCWProxy {
     Uri? opTosUri,
     Uri? checkSessionIframe,
     Uri? endSessionEndpoint,
+    bool? frontchannelLogoutSupported,
+    bool? frontchannelLogoutSessionSupported,
+    bool? backchannelLogoutSupported,
+    bool? backchannelLogoutSessionSupported,
     Uri? revocationEndpoint,
     List<String>? revocationEndpointAuthMethodsSupported,
     List<String>? revocationEndpointAuthSigningAlgValuesSupported,
@@ -184,7 +236,8 @@ abstract class _$OidcProviderMetadataCWProxy {
   });
 }
 
-/// Proxy class for `copyWith` functionality. This is a callable class and can be used as follows: `instanceOfOidcProviderMetadata.copyWith(...)`. Additionally contains functions for specific fields e.g. `instanceOfOidcProviderMetadata.copyWith.fieldName(...)`
+/// Callable proxy for `copyWith` functionality.
+/// Use as `instanceOfOidcProviderMetadata.copyWith(...)` or call `instanceOfOidcProviderMetadata.copyWith.fieldName(value)` for a single field.
 class _$OidcProviderMetadataCWProxyImpl
     implements _$OidcProviderMetadataCWProxy {
   const _$OidcProviderMetadataCWProxyImpl(this._value);
@@ -192,254 +245,296 @@ class _$OidcProviderMetadataCWProxyImpl
   final OidcProviderMetadata _value;
 
   @override
-  OidcProviderMetadata src(Map<String, dynamic> src) => this(src: src);
+  OidcProviderMetadata src(Map<String, dynamic> src) => call(src: src);
 
   @override
-  OidcProviderMetadata issuer(Uri? issuer) => this(issuer: issuer);
+  OidcProviderMetadata issuer(Uri? issuer) => call(issuer: issuer);
 
   @override
   OidcProviderMetadata authorizationEndpoint(Uri? authorizationEndpoint) =>
-      this(authorizationEndpoint: authorizationEndpoint);
+      call(authorizationEndpoint: authorizationEndpoint);
 
   @override
-  OidcProviderMetadata jwksUri(Uri? jwksUri) => this(jwksUri: jwksUri);
+  OidcProviderMetadata jwksUri(Uri? jwksUri) => call(jwksUri: jwksUri);
 
   @override
   OidcProviderMetadata responseTypesSupported(
-          List<String>? responseTypesSupported) =>
-      this(responseTypesSupported: responseTypesSupported);
+    List<String>? responseTypesSupported,
+  ) => call(responseTypesSupported: responseTypesSupported);
 
   @override
   OidcProviderMetadata subjectTypesSupported(
-          List<String>? subjectTypesSupported) =>
-      this(subjectTypesSupported: subjectTypesSupported);
+    List<String>? subjectTypesSupported,
+  ) => call(subjectTypesSupported: subjectTypesSupported);
 
   @override
   OidcProviderMetadata idTokenSigningAlgValuesSupported(
-          List<String>? idTokenSigningAlgValuesSupported) =>
-      this(idTokenSigningAlgValuesSupported: idTokenSigningAlgValuesSupported);
+    List<String>? idTokenSigningAlgValuesSupported,
+  ) => call(idTokenSigningAlgValuesSupported: idTokenSigningAlgValuesSupported);
 
   @override
   OidcProviderMetadata tokenEndpoint(Uri? tokenEndpoint) =>
-      this(tokenEndpoint: tokenEndpoint);
+      call(tokenEndpoint: tokenEndpoint);
 
   @override
   OidcProviderMetadata userinfoEndpoint(Uri? userinfoEndpoint) =>
-      this(userinfoEndpoint: userinfoEndpoint);
+      call(userinfoEndpoint: userinfoEndpoint);
 
   @override
   OidcProviderMetadata registrationEndpoint(Uri? registrationEndpoint) =>
-      this(registrationEndpoint: registrationEndpoint);
+      call(registrationEndpoint: registrationEndpoint);
 
   @override
   OidcProviderMetadata scopesSupported(List<String>? scopesSupported) =>
-      this(scopesSupported: scopesSupported);
+      call(scopesSupported: scopesSupported);
 
   @override
   OidcProviderMetadata responseModesSupported(
-          List<String>? responseModesSupported) =>
-      this(responseModesSupported: responseModesSupported);
+    List<String>? responseModesSupported,
+  ) => call(responseModesSupported: responseModesSupported);
 
   @override
   OidcProviderMetadata grantTypesSupported(List<String>? grantTypesSupported) =>
-      this(grantTypesSupported: grantTypesSupported);
+      call(grantTypesSupported: grantTypesSupported);
 
   @override
   OidcProviderMetadata acrValuesSupported(List<String>? acrValuesSupported) =>
-      this(acrValuesSupported: acrValuesSupported);
+      call(acrValuesSupported: acrValuesSupported);
 
   @override
   OidcProviderMetadata idTokenEncryptionAlgValuesSupported(
-          List<String>? idTokenEncryptionAlgValuesSupported) =>
-      this(
-          idTokenEncryptionAlgValuesSupported:
-              idTokenEncryptionAlgValuesSupported);
+    List<String>? idTokenEncryptionAlgValuesSupported,
+  ) => call(
+    idTokenEncryptionAlgValuesSupported: idTokenEncryptionAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata requestObjectSigningAlgValuesSupported(
-          List<String>? requestObjectSigningAlgValuesSupported) =>
-      this(
-          requestObjectSigningAlgValuesSupported:
-              requestObjectSigningAlgValuesSupported);
+    List<String>? requestObjectSigningAlgValuesSupported,
+  ) => call(
+    requestObjectSigningAlgValuesSupported:
+        requestObjectSigningAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata requestObjectEncryptionAlgValuesSupported(
-          List<String>? requestObjectEncryptionAlgValuesSupported) =>
-      this(
-          requestObjectEncryptionAlgValuesSupported:
-              requestObjectEncryptionAlgValuesSupported);
+    List<String>? requestObjectEncryptionAlgValuesSupported,
+  ) => call(
+    requestObjectEncryptionAlgValuesSupported:
+        requestObjectEncryptionAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata requestObjectEncryptionEncValuesSupported(
-          List<String>? requestObjectEncryptionEncValuesSupported) =>
-      this(
-          requestObjectEncryptionEncValuesSupported:
-              requestObjectEncryptionEncValuesSupported);
+    List<String>? requestObjectEncryptionEncValuesSupported,
+  ) => call(
+    requestObjectEncryptionEncValuesSupported:
+        requestObjectEncryptionEncValuesSupported,
+  );
 
   @override
   OidcProviderMetadata tokenEndpointAuthSigningAlgValuesSupported(
-          List<String>? tokenEndpointAuthSigningAlgValuesSupported) =>
-      this(
-          tokenEndpointAuthSigningAlgValuesSupported:
-              tokenEndpointAuthSigningAlgValuesSupported);
+    List<String>? tokenEndpointAuthSigningAlgValuesSupported,
+  ) => call(
+    tokenEndpointAuthSigningAlgValuesSupported:
+        tokenEndpointAuthSigningAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata tokenEndpointAuthMethodsSupported(
-          List<String>? tokenEndpointAuthMethodsSupported) =>
-      this(
-          tokenEndpointAuthMethodsSupported: tokenEndpointAuthMethodsSupported);
+    List<String>? tokenEndpointAuthMethodsSupported,
+  ) => call(
+    tokenEndpointAuthMethodsSupported: tokenEndpointAuthMethodsSupported,
+  );
 
   @override
   OidcProviderMetadata displayValuesSupported(
-          List<String>? displayValuesSupported) =>
-      this(displayValuesSupported: displayValuesSupported);
+    List<String>? displayValuesSupported,
+  ) => call(displayValuesSupported: displayValuesSupported);
 
   @override
   OidcProviderMetadata claimTypesSupported(List<String>? claimTypesSupported) =>
-      this(claimTypesSupported: claimTypesSupported);
+      call(claimTypesSupported: claimTypesSupported);
 
   @override
   OidcProviderMetadata claimsSupported(List<String>? claimsSupported) =>
-      this(claimsSupported: claimsSupported);
+      call(claimsSupported: claimsSupported);
 
   @override
   OidcProviderMetadata serviceDocumentation(Uri? serviceDocumentation) =>
-      this(serviceDocumentation: serviceDocumentation);
+      call(serviceDocumentation: serviceDocumentation);
 
   @override
   OidcProviderMetadata claimsLocalesSupported(
-          List<String>? claimsLocalesSupported) =>
-      this(claimsLocalesSupported: claimsLocalesSupported);
+    List<String>? claimsLocalesSupported,
+  ) => call(claimsLocalesSupported: claimsLocalesSupported);
 
   @override
   OidcProviderMetadata uiLocalesSupported(List<String>? uiLocalesSupported) =>
-      this(uiLocalesSupported: uiLocalesSupported);
+      call(uiLocalesSupported: uiLocalesSupported);
 
   @override
   OidcProviderMetadata pushedAuthorizationRequestEndpoint(
-          Uri? pushedAuthorizationRequestEndpoint) =>
-      this(
-          pushedAuthorizationRequestEndpoint:
-              pushedAuthorizationRequestEndpoint);
+    Uri? pushedAuthorizationRequestEndpoint,
+  ) => call(
+    pushedAuthorizationRequestEndpoint: pushedAuthorizationRequestEndpoint,
+  );
 
   @override
   OidcProviderMetadata claimsParameterSupported(
-          bool? claimsParameterSupported) =>
-      this(claimsParameterSupported: claimsParameterSupported);
+    bool? claimsParameterSupported,
+  ) => call(claimsParameterSupported: claimsParameterSupported);
+
+  @override
+  OidcProviderMetadata authorizationResponseIssParameterSupported(
+    bool? authorizationResponseIssParameterSupported,
+  ) => call(
+    authorizationResponseIssParameterSupported:
+        authorizationResponseIssParameterSupported,
+  );
 
   @override
   OidcProviderMetadata requestParameterSupported(
-          bool? requestParameterSupported) =>
-      this(requestParameterSupported: requestParameterSupported);
+    bool? requestParameterSupported,
+  ) => call(requestParameterSupported: requestParameterSupported);
 
   @override
   OidcProviderMetadata requireRequestUriRegistration(
-          bool? requireRequestUriRegistration) =>
-      this(requireRequestUriRegistration: requireRequestUriRegistration);
+    bool? requireRequestUriRegistration,
+  ) => call(requireRequestUriRegistration: requireRequestUriRegistration);
 
   @override
   OidcProviderMetadata requestUriParameterSupported(
-          bool? requestUriParameterSupported) =>
-      this(requestUriParameterSupported: requestUriParameterSupported);
+    bool? requestUriParameterSupported,
+  ) => call(requestUriParameterSupported: requestUriParameterSupported);
 
   @override
   OidcProviderMetadata requirePushedAuthorizationRequests(
-          bool? requirePushedAuthorizationRequests) =>
-      this(
-          requirePushedAuthorizationRequests:
-              requirePushedAuthorizationRequests);
+    bool? requirePushedAuthorizationRequests,
+  ) => call(
+    requirePushedAuthorizationRequests: requirePushedAuthorizationRequests,
+  );
 
   @override
   OidcProviderMetadata opPolicyUri(Uri? opPolicyUri) =>
-      this(opPolicyUri: opPolicyUri);
+      call(opPolicyUri: opPolicyUri);
 
   @override
-  OidcProviderMetadata opTosUri(Uri? opTosUri) => this(opTosUri: opTosUri);
+  OidcProviderMetadata opTosUri(Uri? opTosUri) => call(opTosUri: opTosUri);
 
   @override
   OidcProviderMetadata checkSessionIframe(Uri? checkSessionIframe) =>
-      this(checkSessionIframe: checkSessionIframe);
+      call(checkSessionIframe: checkSessionIframe);
 
   @override
   OidcProviderMetadata endSessionEndpoint(Uri? endSessionEndpoint) =>
-      this(endSessionEndpoint: endSessionEndpoint);
+      call(endSessionEndpoint: endSessionEndpoint);
+
+  @override
+  OidcProviderMetadata frontchannelLogoutSupported(
+    bool? frontchannelLogoutSupported,
+  ) => call(frontchannelLogoutSupported: frontchannelLogoutSupported);
+
+  @override
+  OidcProviderMetadata frontchannelLogoutSessionSupported(
+    bool? frontchannelLogoutSessionSupported,
+  ) => call(
+    frontchannelLogoutSessionSupported: frontchannelLogoutSessionSupported,
+  );
+
+  @override
+  OidcProviderMetadata backchannelLogoutSupported(
+    bool? backchannelLogoutSupported,
+  ) => call(backchannelLogoutSupported: backchannelLogoutSupported);
+
+  @override
+  OidcProviderMetadata backchannelLogoutSessionSupported(
+    bool? backchannelLogoutSessionSupported,
+  ) => call(
+    backchannelLogoutSessionSupported: backchannelLogoutSessionSupported,
+  );
 
   @override
   OidcProviderMetadata revocationEndpoint(Uri? revocationEndpoint) =>
-      this(revocationEndpoint: revocationEndpoint);
+      call(revocationEndpoint: revocationEndpoint);
 
   @override
   OidcProviderMetadata revocationEndpointAuthMethodsSupported(
-          List<String>? revocationEndpointAuthMethodsSupported) =>
-      this(
-          revocationEndpointAuthMethodsSupported:
-              revocationEndpointAuthMethodsSupported);
+    List<String>? revocationEndpointAuthMethodsSupported,
+  ) => call(
+    revocationEndpointAuthMethodsSupported:
+        revocationEndpointAuthMethodsSupported,
+  );
 
   @override
   OidcProviderMetadata revocationEndpointAuthSigningAlgValuesSupported(
-          List<String>? revocationEndpointAuthSigningAlgValuesSupported) =>
-      this(
-          revocationEndpointAuthSigningAlgValuesSupported:
-              revocationEndpointAuthSigningAlgValuesSupported);
+    List<String>? revocationEndpointAuthSigningAlgValuesSupported,
+  ) => call(
+    revocationEndpointAuthSigningAlgValuesSupported:
+        revocationEndpointAuthSigningAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata introspectionEndpoint(Uri? introspectionEndpoint) =>
-      this(introspectionEndpoint: introspectionEndpoint);
+      call(introspectionEndpoint: introspectionEndpoint);
 
   @override
   OidcProviderMetadata introspectionEndpointAuthMethodsSupported(
-          List<String>? introspectionEndpointAuthMethodsSupported) =>
-      this(
-          introspectionEndpointAuthMethodsSupported:
-              introspectionEndpointAuthMethodsSupported);
+    List<String>? introspectionEndpointAuthMethodsSupported,
+  ) => call(
+    introspectionEndpointAuthMethodsSupported:
+        introspectionEndpointAuthMethodsSupported,
+  );
 
   @override
   OidcProviderMetadata introspectionEndpointAuthSigningAlgValuesSupported(
-          List<String>? introspectionEndpointAuthSigningAlgValuesSupported) =>
-      this(
-          introspectionEndpointAuthSigningAlgValuesSupported:
-              introspectionEndpointAuthSigningAlgValuesSupported);
+    List<String>? introspectionEndpointAuthSigningAlgValuesSupported,
+  ) => call(
+    introspectionEndpointAuthSigningAlgValuesSupported:
+        introspectionEndpointAuthSigningAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata codeChallengeMethodsSupported(
-          List<String>? codeChallengeMethodsSupported) =>
-      this(codeChallengeMethodsSupported: codeChallengeMethodsSupported);
+    List<String>? codeChallengeMethodsSupported,
+  ) => call(codeChallengeMethodsSupported: codeChallengeMethodsSupported);
 
   @override
   OidcProviderMetadata idTokenEncryptionEncValuesSupported(
-          List<String>? idTokenEncryptionEncValuesSupported) =>
-      this(
-          idTokenEncryptionEncValuesSupported:
-              idTokenEncryptionEncValuesSupported);
+    List<String>? idTokenEncryptionEncValuesSupported,
+  ) => call(
+    idTokenEncryptionEncValuesSupported: idTokenEncryptionEncValuesSupported,
+  );
 
   @override
   OidcProviderMetadata userinfoSigningAlgValuesSupported(
-          List<String>? userinfoSigningAlgValuesSupported) =>
-      this(
-          userinfoSigningAlgValuesSupported: userinfoSigningAlgValuesSupported);
+    List<String>? userinfoSigningAlgValuesSupported,
+  ) => call(
+    userinfoSigningAlgValuesSupported: userinfoSigningAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata userinfoEncryptionAlgValuesSupported(
-          List<String>? userinfoEncryptionAlgValuesSupported) =>
-      this(
-          userinfoEncryptionAlgValuesSupported:
-              userinfoEncryptionAlgValuesSupported);
+    List<String>? userinfoEncryptionAlgValuesSupported,
+  ) => call(
+    userinfoEncryptionAlgValuesSupported: userinfoEncryptionAlgValuesSupported,
+  );
 
   @override
   OidcProviderMetadata userinfoEncryptionEncValuesSupported(
-          List<String>? userinfoEncryptionEncValuesSupported) =>
-      this(
-          userinfoEncryptionEncValuesSupported:
-              userinfoEncryptionEncValuesSupported);
+    List<String>? userinfoEncryptionEncValuesSupported,
+  ) => call(
+    userinfoEncryptionEncValuesSupported: userinfoEncryptionEncValuesSupported,
+  );
 
   @override
-
-  /// This function **does support** nullification of nullable fields. All `null` values passed to `non-nullable` fields will be ignored. You can also use `OidcProviderMetadata(...).copyWith.fieldName(...)` to override fields one at a time with nullification support.
+  /// Creates a new instance with the provided field values.
+  /// Passing `null` to a nullable field nullifies it, while `null` for a non-nullable field is ignored. To update a single field use `OidcProviderMetadata(...).copyWith.fieldName(value)`.
   ///
-  /// Usage
+  /// Example:
   /// ```dart
   /// OidcProviderMetadata(...).copyWith(id: 12, name: "My name")
-  /// ````
+  /// ```
   OidcProviderMetadata call({
     Object? src = const $CopyWithPlaceholder(),
     Object? issuer = const $CopyWithPlaceholder(),
@@ -473,6 +568,8 @@ class _$OidcProviderMetadataCWProxyImpl
     Object? uiLocalesSupported = const $CopyWithPlaceholder(),
     Object? pushedAuthorizationRequestEndpoint = const $CopyWithPlaceholder(),
     Object? claimsParameterSupported = const $CopyWithPlaceholder(),
+    Object? authorizationResponseIssParameterSupported =
+        const $CopyWithPlaceholder(),
     Object? requestParameterSupported = const $CopyWithPlaceholder(),
     Object? requireRequestUriRegistration = const $CopyWithPlaceholder(),
     Object? requestUriParameterSupported = const $CopyWithPlaceholder(),
@@ -481,6 +578,10 @@ class _$OidcProviderMetadataCWProxyImpl
     Object? opTosUri = const $CopyWithPlaceholder(),
     Object? checkSessionIframe = const $CopyWithPlaceholder(),
     Object? endSessionEndpoint = const $CopyWithPlaceholder(),
+    Object? frontchannelLogoutSupported = const $CopyWithPlaceholder(),
+    Object? frontchannelLogoutSessionSupported = const $CopyWithPlaceholder(),
+    Object? backchannelLogoutSupported = const $CopyWithPlaceholder(),
+    Object? backchannelLogoutSessionSupported = const $CopyWithPlaceholder(),
     Object? revocationEndpoint = const $CopyWithPlaceholder(),
     Object? revocationEndpointAuthMethodsSupported =
         const $CopyWithPlaceholder(),
@@ -498,7 +599,7 @@ class _$OidcProviderMetadataCWProxyImpl
     Object? userinfoEncryptionEncValuesSupported = const $CopyWithPlaceholder(),
   }) {
     return OidcProviderMetadata._(
-      src: src == const $CopyWithPlaceholder()
+      src: src == const $CopyWithPlaceholder() || src == null
           ? _value.src
           // ignore: cast_nullable_to_non_nullable
           : src as Map<String, dynamic>,
@@ -508,28 +609,28 @@ class _$OidcProviderMetadataCWProxyImpl
           : issuer as Uri?,
       authorizationEndpoint:
           authorizationEndpoint == const $CopyWithPlaceholder()
-              ? _value.authorizationEndpoint
-              // ignore: cast_nullable_to_non_nullable
-              : authorizationEndpoint as Uri?,
+          ? _value.authorizationEndpoint
+          // ignore: cast_nullable_to_non_nullable
+          : authorizationEndpoint as Uri?,
       jwksUri: jwksUri == const $CopyWithPlaceholder()
           ? _value.jwksUri
           // ignore: cast_nullable_to_non_nullable
           : jwksUri as Uri?,
       responseTypesSupported:
           responseTypesSupported == const $CopyWithPlaceholder()
-              ? _value.responseTypesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : responseTypesSupported as List<String>?,
+          ? _value.responseTypesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : responseTypesSupported as List<String>?,
       subjectTypesSupported:
           subjectTypesSupported == const $CopyWithPlaceholder()
-              ? _value.subjectTypesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : subjectTypesSupported as List<String>?,
+          ? _value.subjectTypesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : subjectTypesSupported as List<String>?,
       idTokenSigningAlgValuesSupported:
           idTokenSigningAlgValuesSupported == const $CopyWithPlaceholder()
-              ? _value.idTokenSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : idTokenSigningAlgValuesSupported as List<String>?,
+          ? _value.idTokenSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : idTokenSigningAlgValuesSupported as List<String>?,
       tokenEndpoint: tokenEndpoint == const $CopyWithPlaceholder()
           ? _value.tokenEndpoint
           // ignore: cast_nullable_to_non_nullable
@@ -548,9 +649,9 @@ class _$OidcProviderMetadataCWProxyImpl
           : scopesSupported as List<String>?,
       responseModesSupported:
           responseModesSupported == const $CopyWithPlaceholder()
-              ? _value.responseModesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : responseModesSupported as List<String>?,
+          ? _value.responseModesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : responseModesSupported as List<String>?,
       grantTypesSupported: grantTypesSupported == const $CopyWithPlaceholder()
           ? _value.grantTypesSupported
           // ignore: cast_nullable_to_non_nullable
@@ -561,42 +662,42 @@ class _$OidcProviderMetadataCWProxyImpl
           : acrValuesSupported as List<String>?,
       idTokenEncryptionAlgValuesSupported:
           idTokenEncryptionAlgValuesSupported == const $CopyWithPlaceholder()
-              ? _value.idTokenEncryptionAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : idTokenEncryptionAlgValuesSupported as List<String>?,
+          ? _value.idTokenEncryptionAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : idTokenEncryptionAlgValuesSupported as List<String>?,
       requestObjectSigningAlgValuesSupported:
           requestObjectSigningAlgValuesSupported == const $CopyWithPlaceholder()
-              ? _value.requestObjectSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : requestObjectSigningAlgValuesSupported as List<String>?,
+          ? _value.requestObjectSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : requestObjectSigningAlgValuesSupported as List<String>?,
       requestObjectEncryptionAlgValuesSupported:
           requestObjectEncryptionAlgValuesSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.requestObjectEncryptionAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : requestObjectEncryptionAlgValuesSupported as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.requestObjectEncryptionAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : requestObjectEncryptionAlgValuesSupported as List<String>?,
       requestObjectEncryptionEncValuesSupported:
           requestObjectEncryptionEncValuesSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.requestObjectEncryptionEncValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : requestObjectEncryptionEncValuesSupported as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.requestObjectEncryptionEncValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : requestObjectEncryptionEncValuesSupported as List<String>?,
       tokenEndpointAuthSigningAlgValuesSupported:
           tokenEndpointAuthSigningAlgValuesSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.tokenEndpointAuthSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : tokenEndpointAuthSigningAlgValuesSupported as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.tokenEndpointAuthSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : tokenEndpointAuthSigningAlgValuesSupported as List<String>?,
       tokenEndpointAuthMethodsSupported:
           tokenEndpointAuthMethodsSupported == const $CopyWithPlaceholder()
-              ? _value.tokenEndpointAuthMethodsSupported
-              // ignore: cast_nullable_to_non_nullable
-              : tokenEndpointAuthMethodsSupported as List<String>?,
+          ? _value.tokenEndpointAuthMethodsSupported
+          // ignore: cast_nullable_to_non_nullable
+          : tokenEndpointAuthMethodsSupported as List<String>?,
       displayValuesSupported:
           displayValuesSupported == const $CopyWithPlaceholder()
-              ? _value.displayValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : displayValuesSupported as List<String>?,
+          ? _value.displayValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : displayValuesSupported as List<String>?,
       claimTypesSupported: claimTypesSupported == const $CopyWithPlaceholder()
           ? _value.claimTypesSupported
           // ignore: cast_nullable_to_non_nullable
@@ -611,43 +712,49 @@ class _$OidcProviderMetadataCWProxyImpl
           : serviceDocumentation as Uri?,
       claimsLocalesSupported:
           claimsLocalesSupported == const $CopyWithPlaceholder()
-              ? _value.claimsLocalesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : claimsLocalesSupported as List<String>?,
+          ? _value.claimsLocalesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : claimsLocalesSupported as List<String>?,
       uiLocalesSupported: uiLocalesSupported == const $CopyWithPlaceholder()
           ? _value.uiLocalesSupported
           // ignore: cast_nullable_to_non_nullable
           : uiLocalesSupported as List<String>?,
       pushedAuthorizationRequestEndpoint:
           pushedAuthorizationRequestEndpoint == const $CopyWithPlaceholder()
-              ? _value.pushedAuthorizationRequestEndpoint
-              // ignore: cast_nullable_to_non_nullable
-              : pushedAuthorizationRequestEndpoint as Uri?,
+          ? _value.pushedAuthorizationRequestEndpoint
+          // ignore: cast_nullable_to_non_nullable
+          : pushedAuthorizationRequestEndpoint as Uri?,
       claimsParameterSupported:
           claimsParameterSupported == const $CopyWithPlaceholder()
-              ? _value.claimsParameterSupported
-              // ignore: cast_nullable_to_non_nullable
-              : claimsParameterSupported as bool?,
+          ? _value.claimsParameterSupported
+          // ignore: cast_nullable_to_non_nullable
+          : claimsParameterSupported as bool?,
+      authorizationResponseIssParameterSupported:
+          authorizationResponseIssParameterSupported ==
+              const $CopyWithPlaceholder()
+          ? _value.authorizationResponseIssParameterSupported
+          // ignore: cast_nullable_to_non_nullable
+          : authorizationResponseIssParameterSupported as bool?,
       requestParameterSupported:
           requestParameterSupported == const $CopyWithPlaceholder()
-              ? _value.requestParameterSupported
-              // ignore: cast_nullable_to_non_nullable
-              : requestParameterSupported as bool?,
+          ? _value.requestParameterSupported
+          // ignore: cast_nullable_to_non_nullable
+          : requestParameterSupported as bool?,
       requireRequestUriRegistration:
           requireRequestUriRegistration == const $CopyWithPlaceholder()
-              ? _value.requireRequestUriRegistration
-              // ignore: cast_nullable_to_non_nullable
-              : requireRequestUriRegistration as bool?,
+          ? _value.requireRequestUriRegistration
+          // ignore: cast_nullable_to_non_nullable
+          : requireRequestUriRegistration as bool?,
       requestUriParameterSupported:
           requestUriParameterSupported == const $CopyWithPlaceholder()
-              ? _value.requestUriParameterSupported
-              // ignore: cast_nullable_to_non_nullable
-              : requestUriParameterSupported as bool?,
+          ? _value.requestUriParameterSupported
+          // ignore: cast_nullable_to_non_nullable
+          : requestUriParameterSupported as bool?,
       requirePushedAuthorizationRequests:
           requirePushedAuthorizationRequests == const $CopyWithPlaceholder()
-              ? _value.requirePushedAuthorizationRequests
-              // ignore: cast_nullable_to_non_nullable
-              : requirePushedAuthorizationRequests as bool?,
+          ? _value.requirePushedAuthorizationRequests
+          // ignore: cast_nullable_to_non_nullable
+          : requirePushedAuthorizationRequests as bool?,
       opPolicyUri: opPolicyUri == const $CopyWithPlaceholder()
           ? _value.opPolicyUri
           // ignore: cast_nullable_to_non_nullable
@@ -664,71 +771,90 @@ class _$OidcProviderMetadataCWProxyImpl
           ? _value.endSessionEndpoint
           // ignore: cast_nullable_to_non_nullable
           : endSessionEndpoint as Uri?,
+      frontchannelLogoutSupported:
+          frontchannelLogoutSupported == const $CopyWithPlaceholder()
+          ? _value.frontchannelLogoutSupported
+          // ignore: cast_nullable_to_non_nullable
+          : frontchannelLogoutSupported as bool?,
+      frontchannelLogoutSessionSupported:
+          frontchannelLogoutSessionSupported == const $CopyWithPlaceholder()
+          ? _value.frontchannelLogoutSessionSupported
+          // ignore: cast_nullable_to_non_nullable
+          : frontchannelLogoutSessionSupported as bool?,
+      backchannelLogoutSupported:
+          backchannelLogoutSupported == const $CopyWithPlaceholder()
+          ? _value.backchannelLogoutSupported
+          // ignore: cast_nullable_to_non_nullable
+          : backchannelLogoutSupported as bool?,
+      backchannelLogoutSessionSupported:
+          backchannelLogoutSessionSupported == const $CopyWithPlaceholder()
+          ? _value.backchannelLogoutSessionSupported
+          // ignore: cast_nullable_to_non_nullable
+          : backchannelLogoutSessionSupported as bool?,
       revocationEndpoint: revocationEndpoint == const $CopyWithPlaceholder()
           ? _value.revocationEndpoint
           // ignore: cast_nullable_to_non_nullable
           : revocationEndpoint as Uri?,
       revocationEndpointAuthMethodsSupported:
           revocationEndpointAuthMethodsSupported == const $CopyWithPlaceholder()
-              ? _value.revocationEndpointAuthMethodsSupported
-              // ignore: cast_nullable_to_non_nullable
-              : revocationEndpointAuthMethodsSupported as List<String>?,
+          ? _value.revocationEndpointAuthMethodsSupported
+          // ignore: cast_nullable_to_non_nullable
+          : revocationEndpointAuthMethodsSupported as List<String>?,
       revocationEndpointAuthSigningAlgValuesSupported:
           revocationEndpointAuthSigningAlgValuesSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.revocationEndpointAuthSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : revocationEndpointAuthSigningAlgValuesSupported
-                  as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.revocationEndpointAuthSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : revocationEndpointAuthSigningAlgValuesSupported as List<String>?,
       introspectionEndpoint:
           introspectionEndpoint == const $CopyWithPlaceholder()
-              ? _value.introspectionEndpoint
-              // ignore: cast_nullable_to_non_nullable
-              : introspectionEndpoint as Uri?,
+          ? _value.introspectionEndpoint
+          // ignore: cast_nullable_to_non_nullable
+          : introspectionEndpoint as Uri?,
       introspectionEndpointAuthMethodsSupported:
           introspectionEndpointAuthMethodsSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.introspectionEndpointAuthMethodsSupported
-              // ignore: cast_nullable_to_non_nullable
-              : introspectionEndpointAuthMethodsSupported as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.introspectionEndpointAuthMethodsSupported
+          // ignore: cast_nullable_to_non_nullable
+          : introspectionEndpointAuthMethodsSupported as List<String>?,
       introspectionEndpointAuthSigningAlgValuesSupported:
           introspectionEndpointAuthSigningAlgValuesSupported ==
-                  const $CopyWithPlaceholder()
-              ? _value.introspectionEndpointAuthSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : introspectionEndpointAuthSigningAlgValuesSupported
-                  as List<String>?,
+              const $CopyWithPlaceholder()
+          ? _value.introspectionEndpointAuthSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : introspectionEndpointAuthSigningAlgValuesSupported as List<String>?,
       codeChallengeMethodsSupported:
           codeChallengeMethodsSupported == const $CopyWithPlaceholder()
-              ? _value.codeChallengeMethodsSupported
-              // ignore: cast_nullable_to_non_nullable
-              : codeChallengeMethodsSupported as List<String>?,
+          ? _value.codeChallengeMethodsSupported
+          // ignore: cast_nullable_to_non_nullable
+          : codeChallengeMethodsSupported as List<String>?,
       idTokenEncryptionEncValuesSupported:
           idTokenEncryptionEncValuesSupported == const $CopyWithPlaceholder()
-              ? _value.idTokenEncryptionEncValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : idTokenEncryptionEncValuesSupported as List<String>?,
+          ? _value.idTokenEncryptionEncValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : idTokenEncryptionEncValuesSupported as List<String>?,
       userinfoSigningAlgValuesSupported:
           userinfoSigningAlgValuesSupported == const $CopyWithPlaceholder()
-              ? _value.userinfoSigningAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : userinfoSigningAlgValuesSupported as List<String>?,
+          ? _value.userinfoSigningAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : userinfoSigningAlgValuesSupported as List<String>?,
       userinfoEncryptionAlgValuesSupported:
           userinfoEncryptionAlgValuesSupported == const $CopyWithPlaceholder()
-              ? _value.userinfoEncryptionAlgValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : userinfoEncryptionAlgValuesSupported as List<String>?,
+          ? _value.userinfoEncryptionAlgValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : userinfoEncryptionAlgValuesSupported as List<String>?,
       userinfoEncryptionEncValuesSupported:
           userinfoEncryptionEncValuesSupported == const $CopyWithPlaceholder()
-              ? _value.userinfoEncryptionEncValuesSupported
-              // ignore: cast_nullable_to_non_nullable
-              : userinfoEncryptionEncValuesSupported as List<String>?,
+          ? _value.userinfoEncryptionEncValuesSupported
+          // ignore: cast_nullable_to_non_nullable
+          : userinfoEncryptionEncValuesSupported as List<String>?,
     );
   }
 }
 
 extension $OidcProviderMetadataCopyWith on OidcProviderMetadata {
-  /// Returns a callable class that can be used as follows: `instanceOfOidcProviderMetadata.copyWith(...)` or like so:`instanceOfOidcProviderMetadata.copyWith.fieldName(...)`.
+  /// Returns a callable class used to build a new instance with modified fields.
+  /// Example: `instanceOfOidcProviderMetadata.copyWith(...)` or `instanceOfOidcProviderMetadata.copyWith.fieldName(...)`.
   // ignore: library_private_types_in_public_api
   _$OidcProviderMetadataCWProxy get copyWith =>
       _$OidcProviderMetadataCWProxyImpl(this);
@@ -739,166 +865,159 @@ extension $OidcProviderMetadataCopyWith on OidcProviderMetadata {
 // **************************************************************************
 
 OidcProviderMetadata _$OidcProviderMetadataFromJson(
-        Map<String, dynamic> json) =>
-    OidcProviderMetadata._(
-      src: readSrcMap(json, '') as Map<String, dynamic>,
-      issuer:
-          json['issuer'] == null ? null : Uri.parse(json['issuer'] as String),
-      authorizationEndpoint: json['authorization_endpoint'] == null
-          ? null
-          : Uri.parse(json['authorization_endpoint'] as String),
-      jwksUri: json['jwks_uri'] == null
-          ? null
-          : Uri.parse(json['jwks_uri'] as String),
-      responseTypesSupported:
-          (json['response_types_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      subjectTypesSupported: (json['subject_types_supported'] as List<dynamic>?)
+  Map<String, dynamic> json,
+) => OidcProviderMetadata._(
+  src: readSrcMap(json, '') as Map<String, dynamic>,
+  issuer: json['issuer'] == null ? null : Uri.parse(json['issuer'] as String),
+  authorizationEndpoint: json['authorization_endpoint'] == null
+      ? null
+      : Uri.parse(json['authorization_endpoint'] as String),
+  jwksUri: json['jwks_uri'] == null
+      ? null
+      : Uri.parse(json['jwks_uri'] as String),
+  responseTypesSupported: (json['response_types_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  subjectTypesSupported: (json['subject_types_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  idTokenSigningAlgValuesSupported:
+      (json['id_token_signing_alg_values_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      idTokenSigningAlgValuesSupported:
-          (json['id_token_signing_alg_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      tokenEndpoint: json['token_endpoint'] == null
-          ? null
-          : Uri.parse(json['token_endpoint'] as String),
-      userinfoEndpoint: json['userinfo_endpoint'] == null
-          ? null
-          : Uri.parse(json['userinfo_endpoint'] as String),
-      registrationEndpoint: json['registration_endpoint'] == null
-          ? null
-          : Uri.parse(json['registration_endpoint'] as String),
-      scopesSupported: (json['scopes_supported'] as List<dynamic>?)
+  tokenEndpoint: json['token_endpoint'] == null
+      ? null
+      : Uri.parse(json['token_endpoint'] as String),
+  userinfoEndpoint: OidcInternalUtilities.tryParseUri(
+    json['userinfo_endpoint'],
+  ),
+  registrationEndpoint: OidcInternalUtilities.tryParseUri(
+    json['registration_endpoint'],
+  ),
+  scopesSupported: (json['scopes_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  responseModesSupported: (json['response_modes_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  grantTypesSupported: (json['grant_types_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  acrValuesSupported: (json['acr_values_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  idTokenEncryptionAlgValuesSupported:
+      (json['id_token_encryption_alg_values_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      responseModesSupported:
-          (json['response_modes_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      grantTypesSupported: (json['grant_types_supported'] as List<dynamic>?)
+  requestObjectSigningAlgValuesSupported:
+      (json['request_object_signing_alg_values_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      acrValuesSupported: (json['acr_values_supported'] as List<dynamic>?)
+  requestObjectEncryptionAlgValuesSupported:
+      (json['request_object_encryption_alg_values_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      idTokenEncryptionAlgValuesSupported:
-          (json['id_token_encryption_alg_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      requestObjectSigningAlgValuesSupported:
-          (json['request_object_signing_alg_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      requestObjectEncryptionAlgValuesSupported:
-          (json['request_object_encryption_alg_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      requestObjectEncryptionEncValuesSupported:
-          (json['request_object_encryption_enc_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      tokenEndpointAuthSigningAlgValuesSupported:
-          (json['token_endpoint_auth_signing_alg_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      tokenEndpointAuthMethodsSupported:
-          (json['token_endpoint_auth_methods_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      displayValuesSupported:
-          (json['display_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      claimTypesSupported: (json['claim_types_supported'] as List<dynamic>?)
+  requestObjectEncryptionEncValuesSupported:
+      (json['request_object_encryption_enc_values_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      claimsSupported: (json['claims_supported'] as List<dynamic>?)
+  tokenEndpointAuthSigningAlgValuesSupported:
+      (json['token_endpoint_auth_signing_alg_values_supported']
+              as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      serviceDocumentation: json['service_documentation'] == null
-          ? null
-          : Uri.parse(json['service_documentation'] as String),
-      claimsLocalesSupported:
-          (json['claims_locales_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      uiLocalesSupported: (json['ui_locales_supported'] as List<dynamic>?)
+  tokenEndpointAuthMethodsSupported:
+      (json['token_endpoint_auth_methods_supported'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      pushedAuthorizationRequestEndpoint:
-          json['pushed_authorization_request_endpoint'] == null
-              ? null
-              : Uri.parse(
-                  json['pushed_authorization_request_endpoint'] as String),
-      claimsParameterSupported: json['claims_parameter_supported'] as bool?,
-      requestParameterSupported: json['request_parameter_supported'] as bool?,
-      requireRequestUriRegistration:
-          json['require_request_uri_registration'] as bool?,
-      requestUriParameterSupported:
-          json['request_uri_parameter_supported'] as bool?,
-      requirePushedAuthorizationRequests:
-          json['require_pushed_authorization_requests'] as bool?,
-      opPolicyUri: json['op_policy_uri'] == null
-          ? null
-          : Uri.parse(json['op_policy_uri'] as String),
-      opTosUri: json['op_tos_uri'] == null
-          ? null
-          : Uri.parse(json['op_tos_uri'] as String),
-      checkSessionIframe: json['check_session_iframe'] == null
-          ? null
-          : Uri.parse(json['check_session_iframe'] as String),
-      endSessionEndpoint: json['end_session_endpoint'] == null
-          ? null
-          : Uri.parse(json['end_session_endpoint'] as String),
-      revocationEndpoint: json['revocation_endpoint'] == null
-          ? null
-          : Uri.parse(json['revocation_endpoint'] as String),
-      revocationEndpointAuthMethodsSupported:
-          (json['revocation_endpoint_auth_methods_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      revocationEndpointAuthSigningAlgValuesSupported:
-          (json['revocation_endpoint_auth_signing_alg_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      introspectionEndpoint: json['introspection_endpoint'] == null
-          ? null
-          : Uri.parse(json['introspection_endpoint'] as String),
-      introspectionEndpointAuthMethodsSupported:
-          (json['introspection_endpoint_auth_methods_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      introspectionEndpointAuthSigningAlgValuesSupported:
-          (json['introspection_endpoint_auth_signing_alg_values_supported']
-                  as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      codeChallengeMethodsSupported:
-          (json['code_challenge_methods_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      idTokenEncryptionEncValuesSupported:
-          (json['id_token_encryption_enc_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      userinfoSigningAlgValuesSupported:
-          (json['userinfo_signing_alg_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      userinfoEncryptionAlgValuesSupported:
-          (json['userinfo_encryption_alg_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-      userinfoEncryptionEncValuesSupported:
-          (json['userinfo_encryption_enc_values_supported'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList(),
-    );
+  displayValuesSupported: (json['display_values_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  claimTypesSupported: (json['claim_types_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  claimsSupported: (json['claims_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  serviceDocumentation: OidcInternalUtilities.tryParseUri(
+    json['service_documentation'],
+  ),
+  claimsLocalesSupported: (json['claims_locales_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  uiLocalesSupported: (json['ui_locales_supported'] as List<dynamic>?)
+      ?.map((e) => e as String)
+      .toList(),
+  pushedAuthorizationRequestEndpoint: OidcInternalUtilities.tryParseUri(
+    json['pushed_authorization_request_endpoint'],
+  ),
+  claimsParameterSupported: json['claims_parameter_supported'] as bool?,
+  authorizationResponseIssParameterSupported:
+      json['authorization_response_iss_parameter_supported'] as bool?,
+  requestParameterSupported: json['request_parameter_supported'] as bool?,
+  requireRequestUriRegistration:
+      json['require_request_uri_registration'] as bool?,
+  requestUriParameterSupported:
+      json['request_uri_parameter_supported'] as bool?,
+  requirePushedAuthorizationRequests:
+      json['require_pushed_authorization_requests'] as bool?,
+  opPolicyUri: OidcInternalUtilities.tryParseUri(json['op_policy_uri']),
+  opTosUri: OidcInternalUtilities.tryParseUri(json['op_tos_uri']),
+  checkSessionIframe: OidcInternalUtilities.tryParseUri(
+    json['check_session_iframe'],
+  ),
+  endSessionEndpoint: OidcInternalUtilities.tryParseUri(
+    json['end_session_endpoint'],
+  ),
+  frontchannelLogoutSupported: json['frontchannel_logout_supported'] as bool?,
+  frontchannelLogoutSessionSupported:
+      json['frontchannel_logout_session_supported'] as bool?,
+  backchannelLogoutSupported: json['backchannel_logout_supported'] as bool?,
+  backchannelLogoutSessionSupported:
+      json['backchannel_logout_session_supported'] as bool?,
+  revocationEndpoint: OidcInternalUtilities.tryParseUri(
+    json['revocation_endpoint'],
+  ),
+  revocationEndpointAuthMethodsSupported:
+      (json['revocation_endpoint_auth_methods_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  revocationEndpointAuthSigningAlgValuesSupported:
+      (json['revocation_endpoint_auth_signing_alg_values_supported']
+              as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  introspectionEndpoint: OidcInternalUtilities.tryParseUri(
+    json['introspection_endpoint'],
+  ),
+  introspectionEndpointAuthMethodsSupported:
+      (json['introspection_endpoint_auth_methods_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  introspectionEndpointAuthSigningAlgValuesSupported:
+      (json['introspection_endpoint_auth_signing_alg_values_supported']
+              as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  codeChallengeMethodsSupported:
+      (json['code_challenge_methods_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  idTokenEncryptionEncValuesSupported:
+      (json['id_token_encryption_enc_values_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  userinfoSigningAlgValuesSupported:
+      (json['userinfo_signing_alg_values_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  userinfoEncryptionAlgValuesSupported:
+      (json['userinfo_encryption_alg_values_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+  userinfoEncryptionEncValuesSupported:
+      (json['userinfo_encryption_enc_values_supported'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+);

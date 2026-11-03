@@ -1,3 +1,5 @@
+[![openid certification](https://openid.net/wordpress-content/uploads/2016/05/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg)](https://openid.net/developers/certified-openid-connect-implementations/)
+
 This is a federated plugin split into the following main packages:
 
 - [oidc](oidc-getting-started.md): Ready to use flutter plugin that conforms to the OIDC spec. ([pub.dev](https://pub.dev/packages/oidc))
@@ -5,15 +7,14 @@ This is a federated plugin split into the following main packages:
 - [oidc_web_core](oidc_web_core.md): Pure dart package based on [package:web](https://pub.dev/packages/web) which allows. ([pub.dev](https://pub.dev/packages/oidc_web_core))
 - [oidc_default_store](oidc_default_store.md): An implementation of `OidcStore` that uses [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) and [shared_preferences](https://pub.dev/packages/shared_preferences). ([pub.dev](https://pub.dev/packages/oidc_default_store))
 - [oidc_loopback_listener](oidc_loopback_listener.md): A pure dart package that creates a simple http server. ([pub.dev](https://pub.dev/packages/oidc_loopback_listener))
+- [oidc_cli](oidc_cli.md): A provider-agnostic CLI for authenticating against an OIDC provider (useful for local dev and scripting).
 
 And the following internal packages:
 
 - [oidc_platform_interface](https://pub.dev/packages/oidc_platform_interface): common interface that needs to be implemented in a platform.
 
-- [oidc_android](https://pub.dev/packages/oidc_android): Android  implementation.
-- [oidc_ios](https://pub.dev/packages/oidc_ios): ios implementation.
-- [oidc_macos](https://pub.dev/packages/oidc_macos): macos implementation.
-- [oidc_flutter_appauth](https://pub.dev/packages/oidc_flutter_appauth): Base Implementation connecting packages with [flutter_appauth](https://pub.dev/packages/flutter_appauth), to use the [AppAuth SDK](https://appauth.io/), used in android, ios, macos.
+- [oidc_android](https://pub.dev/packages/oidc_android): Android implementation — first-party **Chrome Custom Tabs** (no third-party SDK).
+- [oidc_darwin](https://pub.dev/packages/oidc_darwin): iOS + macOS implementation — first-party **ASWebAuthenticationSession** (no third-party SDK; iOS 13+ / macOS 10.15+). Merges and supersedes the former `oidc_ios` and `oidc_macos`.
 
 - [oidc_web](https://pub.dev/packages/oidc_web): Web implementation.
 

@@ -14,7 +14,6 @@ class OidcAuthorizeState extends OidcState {
   ///
   OidcAuthorizeState({
     required this.redirectUri,
-    required this.codeVerifier,
     required this.codeChallenge,
     required this.originalUri,
     required this.nonce,
@@ -22,51 +21,55 @@ class OidcAuthorizeState extends OidcState {
     required this.extraTokenParams,
     required this.extraTokenHeaders,
     required this.options,
+    this.maxAge,
     super.id,
     super.createdAt,
     super.data,
+    super.managerId,
   }) : super(
-          operationDiscriminator:
-              OidcConstants_OperationDiscriminators.authorize,
-        );
+         operationDiscriminator:
+             OidcConstants_OperationDiscriminators.authorize,
+       );
 
   ///
   factory OidcAuthorizeState.fromJson(Map<String, dynamic> src) =>
       _$OidcAuthorizeStateFromJson(src);
 
   @JsonKey(name: OidcConstants_Store.extraTokenHeaders)
-  final Map<String, String>? extraTokenHeaders;
+  Map<String, String>? extraTokenHeaders;
 
   @JsonKey(name: OidcConstants_Store.extraTokenParams)
-  final Map<String, dynamic>? extraTokenParams;
+  Map<String, dynamic>? extraTokenParams;
 
   @JsonKey(name: OidcConstants_Store.options)
-  final Map<String, dynamic>? options;
+  Map<String, dynamic>? options;
 
   /// The same code_challenge that was used to obtain the authorization_code
   /// via PKCE.
   @JsonKey(name: OidcConstants_AuthParameters.codeChallenge)
-  final String? codeChallenge;
-
-  /// The same code_verifier that was used to obtain the authorization_code
-  /// via PKCE.
-  @JsonKey(name: OidcConstants_AuthParameters.codeVerifier)
-  final String? codeVerifier;
+  String? codeChallenge;
 
   /// The redirectUri that was passed.
   @JsonKey(name: OidcConstants_AuthParameters.redirectUri)
-  final Uri redirectUri;
+  Uri redirectUri;
 
   @JsonKey(name: OidcConstants_AuthParameters.clientId)
-  final String clientId;
+  String clientId;
 
   /// The uri to go back to after the page in `redirectUri`
   /// processes the response.
   @JsonKey(name: OidcConstants_Store.originalUri)
-  final Uri? originalUri;
+  Uri? originalUri;
 
   @JsonKey(name: OidcConstants_AuthParameters.nonce)
-  final String nonce;
+  String nonce;
+
+  /// The `max_age` that was requested on the authorization request, persisted
+  /// so the returned id_token's `auth_time` can be validated against it
+  /// (OpenID Connect Core §3.1.2.1) after the redirect round-trip. Serialized
+  /// as integer seconds via [OidcDurationSecondsConverter].
+  @JsonKey(name: OidcConstants_AuthParameters.maxAge)
+  Duration? maxAge;
 
   @override
   Map<String, dynamic> toJson() => _$OidcAuthorizeStateToJson(this);

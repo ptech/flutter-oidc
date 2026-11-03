@@ -25,10 +25,23 @@ void main() {
   );
   final settings = OidcUserManagerSettings(
     redirectUri: Uri.parse('http://example.com/redirect.html'),
+    // These tests pin the pre-existing blocking init semantics (the cached
+    // token is validated/refreshed before init() completes). The new default,
+    // OidcInitMode.cacheFirst, defers that to a background pass.
+    initMode: OidcInitMode.blockingValidate,
   );
+  // Signature verification is always-strict now; every manager below is
+  // constructed with a keyStore holding the mock id_tokens' HS256 signing
+  // key (see mock_client.dart's `mockSigningKey`) so they verify.
+  final managerKeyStore = JsonWebKeyStore()..addKey(mockSigningKey);
 
   setUp(() {
     oidcPlatform = MockOidcPlatform();
+    // `init` subscribes to native browser events; stub the stream so the mock
+    // platform doesn't return null for it.
+    when(
+      oidcPlatform.nativeBrowserEvents,
+    ).thenAnswer((_) => const Stream.empty());
     OidcPlatform.instance = oidcPlatform;
   });
 
@@ -51,6 +64,8 @@ void main() {
           store: store,
           settings: settings,
           httpClient: client,
+          keyStore: managerKeyStore,
+          id: 'test-manager',
         );
         expect(manager.didInit, isFalse);
         await manager.init();
@@ -60,13 +75,16 @@ void main() {
       });
       test('lazy', () async {
         manager = OidcUserManager.lazy(
+          // The mock document's issuer: OIDC Discovery §4.3 rejects a document
+          // whose issuer differs from the one it was fetched for.
           discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(
-            Uri.parse('https://example.com'),
+            Uri.parse('http://server.example.com'),
           ),
           clientCredentials: clientCredentials,
           store: store,
           settings: settings,
           httpClient: client,
+          keyStore: managerKeyStore,
         );
         expect(manager.didInit, isFalse);
         await manager.init();
@@ -74,122 +92,369 @@ void main() {
         expect(manager.discoveryDocument.src, mockProviderMetadata);
         expect(manager.discoveryDocumentUri, isNotNull);
       });
-      group('loadCachedToken', () {
-        final tokenCreatedAt = DateTime.utc(2024, 03);
-        final tokenCreatedAtClock = Clock.fixed(tokenCreatedAt);
-        late Clock nowClock;
-        // The idToken is created
-        late Map<String, dynamic> cachedTokenJson;
-        setUp(() async {
-          cachedTokenJson = withClock(tokenCreatedAtClock, () {
-            return {
-              "scope": OidcInternalUtilities.joinSpaceDelimitedList([
-                OidcConstants_Scopes.openid,
-                OidcConstants_Scopes.profile,
-                OidcConstants_Scopes.email,
-                "offline_access"
-              ]),
-              "access_token": "SlAV32hkKG",
-              "token_type": "Bearer",
-              "refresh_token": "8xLOxBtZp8",
-              "expires_in": const Duration(hours: 1).inSeconds,
-              "id_token": createIdToken(claimsJson: defaultIdTokenClaimsJson()),
-              "expiresInReferenceDate": clock.now().toIso8601String(),
-              "session_state":
-                  "YaSjXERcv7iG5F9euVQ_F4smjyt0jD3sYxARlJdBMVE.9A5536CDE44A8BE6D4F2A9E2ABD73ECF"
-            };
+
+      for (final managerId in [null, 'test-manager']) {
+        group('loadCachedToken, managerId: $managerId', () {
+          final tokenCreatedAt = DateTime.utc(2024, 03);
+          final tokenCreatedAtClock = Clock.fixed(tokenCreatedAt);
+          late Clock nowClock;
+          // The idToken is created
+          late Map<String, dynamic> cachedTokenJson;
+          setUp(() async {
+            cachedTokenJson = withClock(tokenCreatedAtClock, () {
+              return {
+                "scope": OidcInternalUtilities.joinSpaceDelimitedList([
+                  OidcConstants_Scopes.openid,
+                  OidcConstants_Scopes.profile,
+                  OidcConstants_Scopes.email,
+                  "offline_access",
+                ]),
+                "access_token": "SlAV32hkKG",
+                "token_type": "Bearer",
+                "refresh_token": "8xLOxBtZp8",
+                "expires_in": const Duration(hours: 1).inSeconds,
+                "id_token": createIdToken(
+                  claimsJson: defaultIdTokenClaimsJson(),
+                ),
+                "expiresInReferenceDate": clock.now().toIso8601String(),
+                "session_state":
+                    "YaSjXERcv7iG5F9euVQ_F4smjyt0jD3sYxARlJdBMVE.9A5536CDE44A8BE6D4F2A9E2ABD73ECF",
+              };
+            });
+            await store.set(
+              OidcStoreNamespace.secureTokens,
+              key: OidcConstants_Store.currentToken,
+              value: jsonEncode(cachedTokenJson),
+              managerId: managerId,
+            );
+            manager = OidcUserManager(
+              id: managerId,
+              discoveryDocument: doc,
+              clientCredentials: clientCredentials,
+              store: store,
+              settings: settings,
+              httpClient: client,
+              keyStore: managerKeyStore,
+            );
           });
-          await store.set(
-            OidcStoreNamespace.secureTokens,
-            key: OidcConstants_Store.currentToken,
-            value: jsonEncode(cachedTokenJson),
-          );
-          manager = OidcUserManager(
-            discoveryDocument: doc,
-            clientCredentials: clientCredentials,
-            store: store,
-            settings: settings,
-            httpClient: client,
-          );
-        });
 
-        test('with non-expired token should load the user normally', () async {
-          final nowMock = tokenCreatedAt.add(const Duration(minutes: 1));
-          nowClock = Clock.fixed(nowMock);
+          test('with non-expired token should load the user normally', () async {
+            final nowMock = tokenCreatedAt.add(const Duration(minutes: 1));
+            nowClock = Clock.fixed(nowMock);
 
-          await withClock(nowClock, () async {
-            await manager.init();
+            await withClock(nowClock, () async {
+              await manager.init();
+            });
+            expect(manager.didInit, isTrue);
+            expect(manager.currentUser, isNotNull);
+
+            final newToken = manager.currentUser?.token;
+            expect(newToken, isNotNull);
+            //no refresh is needed, so old token remains
+            expect(newToken!.creationTime, tokenCreatedAt);
+            final storedToken = await store.get(
+              OidcStoreNamespace.secureTokens,
+              key: OidcConstants_Store.currentToken,
+              managerId: managerId,
+            );
+            //since no refresh happened AND token is valid, it should remain in the store.
+            expect(storedToken, isNotNull);
+            expect(jsonDecode(storedToken!), cachedTokenJson);
           });
-          expect(manager.didInit, isTrue);
-          expect(manager.currentUser, isNotNull);
+          test('With expired token should refresh the token', () async {
+            //
+            final nowMock = tokenCreatedAt.add(const Duration(hours: 2));
+            nowClock = Clock.fixed(nowMock);
 
-          final newToken = manager.currentUser?.token;
-          expect(newToken, isNotNull);
-          //no refresh is needed, so old token remains
-          expect(newToken!.creationTime, tokenCreatedAt);
-          final storedToken = await store.get(
-            OidcStoreNamespace.secureTokens,
-            key: OidcConstants_Store.currentToken,
-          );
-          //since no refresh happened AND token is valid, it should remain in the store.
-          expect(storedToken, isNotNull);
-          expect(jsonDecode(storedToken!), cachedTokenJson);
-        });
-        test('With expired token should refresh the token', () async {
-          //
-          final nowMock = tokenCreatedAt.add(const Duration(hours: 2));
-          nowClock = Clock.fixed(nowMock);
+            await withClock(nowClock, () async {
+              await manager.init();
+            });
+            expect(manager.didInit, isTrue);
+            expect(manager.currentUser, isNotNull);
 
-          await withClock(nowClock, () async {
-            await manager.init();
+            final newToken = manager.currentUser?.token;
+            expect(newToken, isNotNull);
+            // A refresh is needed, so creation time should reflect that.
+            expect(newToken!.creationTime, nowMock);
+            final storedToken = await store.get(
+              OidcStoreNamespace.secureTokens,
+              key: OidcConstants_Store.currentToken,
+              managerId: managerId,
+            );
+            // a refresh happened, but new token should remain in the store.
+            expect(storedToken, isNotNull);
+            final decodedStoredToken =
+                jsonDecode(storedToken!) as Map<String, dynamic>;
+
+            expect(
+              decodedStoredToken[OidcConstants_Store.expiresInReferenceDate],
+              nowMock.toIso8601String(),
+            );
           });
-          expect(manager.didInit, isTrue);
-          expect(manager.currentUser, isNotNull);
+          test(
+            'With expired token and refresh response without id_token should keep cached expired id_token',
+            () async {
+              client = createMockOidcClient(
+                beforeDefault: (request) async {
+                  final pathSegments = request.url.pathSegments;
+                  if (pathSegments.length == 2 &&
+                      pathSegments[0] == '.well-known' &&
+                      pathSegments[1] == 'openid-configuration') {
+                    return Response(jsonEncode(mockProviderMetadata), 200);
+                  }
+                  if (pathSegments.isNotEmpty &&
+                      pathSegments.first == 'token') {
+                    final tokenResponse = createMockTokenResponse(
+                      claimsJson: defaultIdTokenClaimsJson(),
+                    )..remove('id_token');
+                    return Response(jsonEncode(tokenResponse), 200);
+                  }
+                  throw UnimplementedError(
+                    "Don't know how to handle the request ${request.url}",
+                  );
+                },
+              );
+              manager = OidcUserManager(
+                id: managerId,
+                discoveryDocument: doc,
+                clientCredentials: clientCredentials,
+                store: store,
+                settings: settings,
+                httpClient: client,
+                keyStore: managerKeyStore,
+              );
 
-          final newToken = manager.currentUser?.token;
-          expect(newToken, isNotNull);
-          // A refresh is needed, so creation time should reflect that.
-          expect(newToken!.creationTime, nowMock);
-          final storedToken = await store.get(
-            OidcStoreNamespace.secureTokens,
-            key: OidcConstants_Store.currentToken,
-          );
-          // a refresh happened, but new token should remain in the store.
-          expect(storedToken, isNotNull);
-          final decodedStoredToken =
-              jsonDecode(storedToken!) as Map<String, dynamic>;
+              final nowMock = tokenCreatedAt.add(const Duration(hours: 2));
+              nowClock = Clock.fixed(nowMock);
 
-          expect(
-            decodedStoredToken[OidcConstants_Store.expiresInReferenceDate],
-            nowMock.toIso8601String(),
+              await withClock(nowClock, () async {
+                await manager.init();
+              });
+
+              expect(manager.didInit, isTrue);
+              expect(manager.currentUser, isNotNull);
+
+              final newToken = manager.currentUser!.token;
+              expect(newToken.creationTime, nowMock);
+              expect(newToken.idToken, cachedTokenJson['id_token']);
+              expect(newToken.allowExpiredIdToken, isTrue);
+              expect(newToken.accessToken, isNot(equals('SlAV32hkKG')));
+
+              final storedToken = await store.get(
+                OidcStoreNamespace.secureTokens,
+                key: OidcConstants_Store.currentToken,
+                managerId: managerId,
+              );
+              expect(storedToken, isNotNull);
+
+              final decodedStoredToken =
+                  jsonDecode(storedToken!) as Map<String, dynamic>;
+              expect(
+                decodedStoredToken[OidcConstants_AuthParameters.idToken],
+                cachedTokenJson['id_token'],
+              );
+              expect(
+                decodedStoredToken[OidcConstants_Store.allowExpiredIdToken],
+                isTrue,
+              );
+            },
           );
-        });
-        test(
+          test(
+            'Should reload a refreshed token without re-rejecting the reused expired id_token',
+            () async {
+              client = createMockOidcClient(
+                beforeDefault: (request) async {
+                  final pathSegments = request.url.pathSegments;
+                  if (pathSegments.length == 2 &&
+                      pathSegments[0] == '.well-known' &&
+                      pathSegments[1] == 'openid-configuration') {
+                    return Response(jsonEncode(mockProviderMetadata), 200);
+                  }
+                  if (pathSegments.isNotEmpty &&
+                      pathSegments.first == 'token') {
+                    final tokenResponse = createMockTokenResponse(
+                      claimsJson: defaultIdTokenClaimsJson(),
+                    )..remove('id_token');
+                    return Response(jsonEncode(tokenResponse), 200);
+                  }
+                  throw UnimplementedError(
+                    "Don't know how to handle the request ${request.url}",
+                  );
+                },
+              );
+              manager = OidcUserManager(
+                id: managerId,
+                discoveryDocument: doc,
+                clientCredentials: clientCredentials,
+                store: store,
+                settings: settings,
+                httpClient: client,
+                keyStore: managerKeyStore,
+              );
+
+              final refreshedAt = tokenCreatedAt.add(const Duration(hours: 2));
+              await withClock(Clock.fixed(refreshedAt), () async {
+                await manager.init();
+              });
+              expect(manager.currentUser, isNotNull);
+
+              client = createMockOidcClient(
+                beforeDefault: (request) async {
+                  throw StateError(
+                    'Unexpected network request: ${request.url}',
+                  );
+                },
+              );
+              manager = OidcUserManager(
+                id: managerId,
+                discoveryDocument: doc,
+                clientCredentials: clientCredentials,
+                store: store,
+                settings: settings,
+                httpClient: client,
+                keyStore: managerKeyStore,
+              );
+
+              final reloadAt = refreshedAt.add(const Duration(minutes: 30));
+              await withClock(Clock.fixed(reloadAt), () async {
+                await manager.init();
+              });
+
+              final reloadedToken = manager.currentUser?.token;
+              expect(reloadedToken, isNotNull);
+              expect(reloadedToken!.allowExpiredIdToken, isTrue);
+              expect(reloadedToken.idToken, cachedTokenJson['id_token']);
+              expect(reloadedToken.creationTime, refreshedAt);
+            },
+          );
+          test(
+            'Should not emit token expired when refresh succeeds without id_token',
+            () async {
+              final createdAt = DateTime.now().toUtc();
+              cachedTokenJson = {
+                "scope": OidcInternalUtilities.joinSpaceDelimitedList([
+                  OidcConstants_Scopes.openid,
+                  OidcConstants_Scopes.profile,
+                  OidcConstants_Scopes.email,
+                  "offline_access",
+                ]),
+                "access_token": "short-lived-token",
+                "token_type": "Bearer",
+                "refresh_token": "8xLOxBtZp8",
+                "expires_in": const Duration(seconds: 1).inSeconds,
+                "id_token": createIdToken(
+                  claimsJson: defaultIdTokenClaimsJson(
+                    iat: createdAt,
+                    exp: createdAt.add(const Duration(hours: 1)),
+                  ),
+                ),
+                "expiresInReferenceDate": createdAt.toIso8601String(),
+                "session_state":
+                    "YaSjXERcv7iG5F9euVQ_F4smjyt0jD3sYxARlJdBMVE.9A5536CDE44A8BE6D4F2A9E2ABD73ECF",
+              };
+              await store.set(
+                OidcStoreNamespace.secureTokens,
+                key: OidcConstants_Store.currentToken,
+                value: jsonEncode(cachedTokenJson),
+                managerId: managerId,
+              );
+
+              var refreshRequestCount = 0;
+              client = createMockOidcClient(
+                beforeDefault: (request) async {
+                  final pathSegments = request.url.pathSegments;
+                  if (pathSegments.length == 2 &&
+                      pathSegments[0] == '.well-known' &&
+                      pathSegments[1] == 'openid-configuration') {
+                    return Response(jsonEncode(mockProviderMetadata), 200);
+                  }
+                  if (pathSegments.isNotEmpty &&
+                      pathSegments.first == 'token') {
+                    refreshRequestCount++;
+                    final tokenResponse = createMockTokenResponse(
+                      claimsJson: defaultIdTokenClaimsJson(),
+                    )..remove('id_token');
+                    return Response(jsonEncode(tokenResponse), 200);
+                  }
+                  throw UnimplementedError(
+                    "Don't know how to handle the request ${request.url}",
+                  );
+                },
+              );
+
+              final eventSettings = OidcUserManagerSettings(
+                redirectUri: settings.redirectUri,
+                refreshBefore: (_) => const Duration(milliseconds: 700),
+                initMode: OidcInitMode.blockingValidate,
+              );
+              manager = OidcUserManager(
+                id: managerId,
+                discoveryDocument: doc,
+                clientCredentials: clientCredentials,
+                store: store,
+                settings: eventSettings,
+                httpClient: client,
+                keyStore: managerKeyStore,
+              );
+
+              await manager.init();
+              expect(manager.currentUser, isNotNull);
+
+              final events = <OidcEvent>[];
+              final sub = manager.events().listen(events.add);
+
+              // #123: the effective expiring lead is clamped to at most HALF
+              // the token lifetime. With a 1s token and a 700ms configured
+              // lead, the lead clamps to 500ms, so the expiring event (and the
+              // auto-refresh it drives) fires ~500ms after load rather than at
+              // 1000 - 700 = 300ms. Wait past the clamped instant (but before
+              // the original 1000ms expiry) so the single refresh is observed.
+              await Future<void>.delayed(const Duration(milliseconds: 700));
+
+              expect(refreshRequestCount, equals(1));
+              expect(events.whereType<OidcTokenExpiringEvent>(), hasLength(1));
+              expect(events.whereType<OidcTokenExpiredEvent>(), isEmpty);
+              expect(manager.currentUser, isNotNull);
+              expect(manager.currentUser!.token.allowExpiredIdToken, isTrue);
+
+              await Future<void>.delayed(const Duration(milliseconds: 750));
+
+              expect(events.whereType<OidcTokenExpiredEvent>(), isEmpty);
+
+              await sub.cancel();
+              await manager.dispose();
+            },
+          );
+          test(
             'With expired token and no refresh token available, should remove the token',
             () async {
-          cachedTokenJson.remove('refresh_token');
-          await store.set(
-            OidcStoreNamespace.secureTokens,
-            key: OidcConstants_Store.currentToken,
-            value: jsonEncode(cachedTokenJson),
-          );
-          //
-          final nowMock = tokenCreatedAt.add(const Duration(hours: 2));
-          nowClock = Clock.fixed(nowMock);
+              cachedTokenJson.remove('refresh_token');
+              await store.set(
+                OidcStoreNamespace.secureTokens,
+                key: OidcConstants_Store.currentToken,
+                value: jsonEncode(cachedTokenJson),
+                managerId: managerId,
+              );
+              //
+              final nowMock = tokenCreatedAt.add(const Duration(hours: 2));
+              nowClock = Clock.fixed(nowMock);
 
-          await withClock(nowClock, () async {
-            await manager.init();
-          });
-          expect(manager.didInit, isTrue);
-          expect(manager.currentUser, isNull);
+              await withClock(nowClock, () async {
+                await manager.init();
+              });
+              expect(manager.didInit, isTrue);
+              expect(manager.currentUser, isNull);
 
-          final storedToken = await store.get(
-            OidcStoreNamespace.secureTokens,
-            key: OidcConstants_Store.currentToken,
+              final storedToken = await store.get(
+                OidcStoreNamespace.secureTokens,
+                key: OidcConstants_Store.currentToken,
+                managerId: managerId,
+              );
+              expect(storedToken, isNull);
+            },
           );
-          expect(storedToken, isNull);
         });
-      });
+      }
     });
   });
 }

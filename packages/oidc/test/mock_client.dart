@@ -8,6 +8,7 @@ import 'package:http/src/request.dart';
 import 'package:http/src/response.dart';
 import 'package:http/testing.dart';
 import 'package:oidc/oidc.dart';
+
 // import 'package:oidc_core/oidc_core.dart';
 
 Map<String, dynamic> createMockTokenResponse({
@@ -23,32 +24,35 @@ Map<String, dynamic> createMockTokenResponse({
   };
 }
 
-Map<String, dynamic> defaultIdTokenClaimsJson({DateTime? iat, DateTime? exp}) =>
-    {
-      "iss": "http://server.example.com",
-      //id token expires after 1 hour
-      "iat": (iat ?? clock.now()).secondsSinceEpoch,
-      "exp":
-          (exp ?? clock.now().add(const Duration(hours: 1))).secondsSinceEpoch,
-      "aud": "my_client_id",
-      "sub": "248289761001",
-      "nonce": "n-0S6_WzA2Mj"
-    };
-String createIdToken({
-  required Map<String, dynamic> claimsJson,
-}) {
+Map<String, dynamic> defaultIdTokenClaimsJson({
+  DateTime? iat,
+  DateTime? exp,
+}) => {
+  "iss": "http://server.example.com",
+  //id token expires after 1 hour
+  "iat": (iat ?? clock.now()).secondsSinceEpoch,
+  "exp": (exp ?? clock.now().add(const Duration(hours: 1))).secondsSinceEpoch,
+  "aud": "my_client_id",
+  "sub": "248289761001",
+  "nonce": "n-0S6_WzA2Mj",
+};
+
+/// The (well-known, RFC 7515/7520 test-vector) HS256 key every mock id_token
+/// in this file is signed with. Signature verification is always-strict now,
+/// so tests that build an [OidcUserManager] must register this key on its
+/// `keyStore` for the mock id_tokens to verify.
+final JsonWebKey mockSigningKey = JsonWebKey.fromJson({
+  "kty": "oct",
+  "k":
+      "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow",
+})!;
+
+String createIdToken({required Map<String, dynamic> claimsJson}) {
   final claims = JsonWebTokenClaims.fromJson(claimsJson);
 
   final builder = JsonWebSignatureBuilder()
     ..jsonContent = claims.toJson()
-    ..addRecipient(
-      JsonWebKey.fromJson({
-        "kty": "oct",
-        "k":
-            "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
-      }),
-      algorithm: "HS256",
-    );
+    ..addRecipient(mockSigningKey, algorithm: "HS256");
   final res = builder.build();
   return res.toCompactSerialization();
 }
@@ -99,7 +103,7 @@ const mockProviderMetadata = {
   'grant_types_supported': [
     OidcConstants_GrantType.authorizationCode,
     OidcConstants_GrantType.refreshToken,
-  ]
+  ],
 };
 const googleProviderMetadata = {
   "issuer": "https://accounts.google.com",
@@ -117,14 +121,14 @@ const googleProviderMetadata = {
     "code id_token",
     "token id_token",
     "code token id_token",
-    "none"
+    "none",
   ],
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"],
   "scopes_supported": ["openid", "email", "profile"],
   "token_endpoint_auth_methods_supported": [
     "client_secret_post",
-    "client_secret_basic"
+    "client_secret_basic",
   ],
   "claims_supported": [
     "aud",
@@ -138,13 +142,13 @@ const googleProviderMetadata = {
     "locale",
     "name",
     "picture",
-    "sub"
+    "sub",
   ],
   "code_challenge_methods_supported": ["plain", "S256"],
   "grant_types_supported": [
     "authorization_code",
     "refresh_token",
     "urn:ietf:params:oauth:grant-type:device_code",
-    "urn:ietf:params:oauth:grant-type:jwt-bearer"
-  ]
+    "urn:ietf:params:oauth:grant-type:jwt-bearer",
+  ],
 };

@@ -1,5 +1,3 @@
-// ignore_for_file: lines_longer_than_80_chars
-
 import 'package:oidc_core/oidc_core.dart';
 
 enum OidcStoreNamespace {
@@ -43,11 +41,15 @@ enum OidcStoreNamespace {
 /// or `OidcMemoryStore` for a memory-only store (for CI/CD or CLI apps).
 abstract interface class OidcReadOnlyStore {
   Future<void> init();
-  Future<Set<String>> getAllKeys(OidcStoreNamespace namespace);
+  Future<Set<String>> getAllKeys(
+    OidcStoreNamespace namespace, {
+    String? managerId,
+  });
 
   Future<Map<String, String>> getMany(
     OidcStoreNamespace namespace, {
     required Set<String> keys,
+    String? managerId,
   });
 }
 
@@ -60,10 +62,12 @@ abstract interface class OidcStore extends OidcReadOnlyStore {
   Future<void> setMany(
     OidcStoreNamespace namespace, {
     required Map<String, String> values,
+    String? managerId,
   });
   Future<void> removeMany(
     OidcStoreNamespace namespace, {
     required Set<String> keys,
+    String? managerId,
   });
 }
 
@@ -72,9 +76,13 @@ extension OidcReadOnlyStoreExt on OidcReadOnlyStore {
   Future<String?> get(
     OidcStoreNamespace namespace, {
     required String key,
+    String? managerId,
   }) {
-    return getMany(namespace, keys: {key})
-        .then((value) => value.values.firstOrNull);
+    return getMany(
+      namespace,
+      keys: {key},
+      managerId: managerId,
+    ).then((value) => value.values.firstOrNull);
   }
 
   /// Gets the current state from the session namespace.
@@ -84,37 +92,57 @@ extension OidcReadOnlyStoreExt on OidcReadOnlyStore {
   //     );
 
   /// Gets the current nonce from the session namespace.
-  Future<String?> getCurrentNonce() => get(
-        OidcStoreNamespace.secureTokens,
-        key: OidcConstants_AuthParameters.nonce,
-      );
+  Future<String?> getCurrentNonce({String? managerId}) => get(
+    OidcStoreNamespace.secureTokens,
+    key: OidcConstants_AuthParameters.nonce,
+    managerId: managerId,
+  );
 
   /// Gets the stateData (value) of a [state] (key).
   Future<String?> getStateData(String state) => get(
-        OidcStoreNamespace.state,
-        key: state,
-      );
+    OidcStoreNamespace.state,
+    key: state,
+  );
+
+  /// Gets the PKCE `code_verifier` for an in-flight authorization [state] from
+  /// the [OidcStoreNamespace.secureTokens] namespace.
+  ///
+  /// This is the only source of the `code_verifier`. Returns null when absent —
+  /// an unknown state, a flow whose verifier was already consumed, or one
+  /// started by a pre-2.0.0 version that embedded it in the (plaintext)
+  /// [OidcStoreNamespace.state] payload instead. Callers MUST NOT substitute a
+  /// value from the state payload (reading the secret back out of the namespace
+  /// it was deliberately moved off of undoes what
+  /// [OidcStoreExt.setStateCodeVerifier] protects) nor from the authorization
+  /// response (redirect parameters are shaped by whoever sent the redirect).
+  /// Null simply means no `code_verifier` goes on the token request.
+  Future<String?> getStateCodeVerifier(String state) => get(
+    OidcStoreNamespace.secureTokens,
+    key: _stateCodeVerifierKey(state),
+  );
 
   /// Gets the stateData (value) of a [state] (key).
   Future<String?> getStateResponseData(String state) => get(
-        OidcStoreNamespace.stateResponse,
-        key: state,
-      );
+    OidcStoreNamespace.stateResponse,
+    key: state,
+  );
 
   /// Gets the current
   Future<String?> getCurrentFrontChannelLogoutRequest() => get(
-        OidcStoreNamespace.request,
-        key: OidcConstants_Store.frontChannelLogout,
-      );
+    OidcStoreNamespace.request,
+    key: OidcConstants_Store.frontChannelLogout,
+  );
 
   Future<Map<String, ({String stateData, String stateResponse})>>
-      getStatesWithResponses() async {
+  getStatesWithResponses() async {
     final responseKeys = await getAllKeys(OidcStoreNamespace.stateResponse);
     if (responseKeys.isEmpty) {
       return {};
     }
-    final allResponses =
-        await getMany(OidcStoreNamespace.stateResponse, keys: responseKeys);
+    final allResponses = await getMany(
+      OidcStoreNamespace.stateResponse,
+      keys: responseKeys,
+    );
     if (allResponses.isEmpty) {
       return {};
     }
@@ -138,44 +166,43 @@ extension OidcStoreExt on OidcStore {
     OidcStoreNamespace namespace, {
     required String key,
     required String value,
+    String? managerId,
   }) {
-    return setMany(namespace, values: {key: value});
+    return setMany(
+      namespace,
+      values: {key: value},
+      managerId: managerId,
+    );
   }
 
   /// Removes a single key from the store.
   Future<void> remove(
     OidcStoreNamespace namespace, {
     required String key,
+    String? managerId,
   }) {
-    return removeMany(namespace, keys: {key});
+    return removeMany(
+      namespace,
+      keys: {key},
+      managerId: managerId,
+    );
   }
 
-  /// Sets the current state from the session namespace.
+  /// Sets the current nonce from the secureTokens namespace.
   ///
   /// Sending null will remove the key.
-  // Future<void> setCurrentState(String? state) => state == null
-  //     ? remove(
-  //         OidcStoreNamespace.session,
-  //         key: OidcConstants_AuthParameters.state,
-  //       )
-  //     : set(
-  //         OidcStoreNamespace.session,
-  //         key: OidcConstants_AuthParameters.state,
-  //         value: state,
-  //       );
-
-  /// Sets the current state from the session namespace.
-  ///
-  /// Sending null will remove the key.
-  Future<void> setCurrentNonce(String? nonce) => nonce == null
+  Future<void> setCurrentNonce(String? nonce, {String? managerId}) =>
+      nonce == null
       ? remove(
           OidcStoreNamespace.secureTokens,
           key: OidcConstants_AuthParameters.nonce,
+          managerId: managerId,
         )
       : set(
           OidcStoreNamespace.secureTokens,
           key: OidcConstants_AuthParameters.nonce,
           value: nonce,
+          managerId: managerId,
         );
 
   /// Sets the [stateData] (value) of a [state] (key).
@@ -184,17 +211,44 @@ extension OidcStoreExt on OidcStore {
   Future<void> setStateData({
     required String state,
     required String? stateData,
-  }) =>
-      stateData == null
-          ? remove(
-              OidcStoreNamespace.state,
-              key: state,
-            )
-          : set(
-              OidcStoreNamespace.state,
-              key: state,
-              value: stateData,
-            );
+  }) => stateData == null
+      ? remove(
+          OidcStoreNamespace.state,
+          key: state,
+        )
+      : set(
+          OidcStoreNamespace.state,
+          key: state,
+          value: stateData,
+        );
+
+  /// Persists the PKCE `code_verifier` for an in-flight authorization [state]
+  /// in the [OidcStoreNamespace.secureTokens] namespace, keyed by the state id.
+  ///
+  /// The `code_verifier` is secret-grade: an attacker who captures it together
+  /// with the authorization `code` can complete the token exchange (RFC 7636
+  /// §1). Persisting it in `secureTokens` (encrypted at rest on web via
+  /// `OidcWebStore`, secure-storage-backed on mobile/desktop via
+  /// `OidcDefaultStore`) instead of the plaintext [OidcStoreNamespace.state]
+  /// payload closes that at-rest exposure on every platform — the same posture
+  /// the nonce already gets via [setCurrentNonce].
+  ///
+  /// if [codeVerifier] (value) is null, the entry is removed; call this after a
+  /// flow completes (or when clearing a stale state) so the secret does not
+  /// outlive the short-lived flow.
+  Future<void> setStateCodeVerifier({
+    required String state,
+    required String? codeVerifier,
+  }) => codeVerifier == null
+      ? remove(
+          OidcStoreNamespace.secureTokens,
+          key: _stateCodeVerifierKey(state),
+        )
+      : set(
+          OidcStoreNamespace.secureTokens,
+          key: _stateCodeVerifierKey(state),
+          value: codeVerifier,
+        );
 
   /// Sets the [stateData] (value) of a [state] (key).
   ///
@@ -202,34 +256,43 @@ extension OidcStoreExt on OidcStore {
   Future<void> setStateResponseData({
     required String state,
     required String? stateData,
-  }) =>
-      stateData == null
-          ? remove(
-              OidcStoreNamespace.stateResponse,
-              key: state,
-            )
-          : set(
-              OidcStoreNamespace.stateResponse,
-              key: state,
-              value: stateData,
-            );
+  }) => stateData == null
+      ? remove(
+          OidcStoreNamespace.stateResponse,
+          key: state,
+        )
+      : set(
+          OidcStoreNamespace.stateResponse,
+          key: state,
+          value: stateData,
+        );
 
-  /// Gets the stateData (value) of a [state] (key).
-  Future<void> removeStateResponseData(String state) => setStateData(
-        state: state,
-        stateData: null,
-      );
+  /// Removes the stored state-response (the unprocessed redirect [Uri]) for a
+  /// [state] (key) from the [OidcStoreNamespace.stateResponse] namespace.
+  Future<void> removeStateResponseData(String state) => setStateResponseData(
+    state: state,
+    stateData: null,
+  );
 
   /// Gets the current
   Future<void> setCurrentFrontChannelLogoutRequest(String? value) =>
       value == null
-          ? remove(
-              OidcStoreNamespace.request,
-              key: OidcConstants_Store.frontChannelLogout,
-            )
-          : set(
-              OidcStoreNamespace.request,
-              key: OidcConstants_Store.frontChannelLogout,
-              value: value,
-            );
+      ? remove(
+          OidcStoreNamespace.request,
+          key: OidcConstants_Store.frontChannelLogout,
+        )
+      : set(
+          OidcStoreNamespace.request,
+          key: OidcConstants_Store.frontChannelLogout,
+          value: value,
+        );
 }
+
+/// The [OidcStoreNamespace.secureTokens] key under which the PKCE
+/// `code_verifier` for an in-flight authorization [state] is persisted.
+///
+/// The state id (a UUID) namespaces the entry so concurrent authorization
+/// flows never collide, and the `code_verifier.` prefix keeps it distinct from
+/// the token/nonce entries that share the namespace.
+String _stateCodeVerifierKey(String state) =>
+    '${OidcConstants_AuthParameters.codeVerifier}.$state';

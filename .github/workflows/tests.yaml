@@ -15,32 +15,99 @@ on:
     paths-ignore:
       - "**.md"
   workflow_dispatch:
+    inputs:
+      ios_heavy_diagnostics:
+        description: "iOS job: stream simulator logs and record the screen (adds load)"
+        type: boolean
+        default: false
+      ios_force_stall_module:
+        description: "iOS job, test-only: conformance module whose first attempt is forced to stall, to prove the gated rerun (empty = off)"
+        type: string
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  TEST_PRESET: all
+  CHROME_FLAGS: --headless --no-sandbox --disable-dev-shm-usage --disable-gpu
+  # jose_plus's crypto-executor suites (keygen/sign/encrypt) take ~55min
+  # per browser under dart2js's ~200x slower BigInt (#371); while they
+  # run, other suites' loads starve. Exclude them (tagged slow-web-crypto,
+  # see packages/jose_plus/dart_test.yaml) from PR web runs only -- VM
+  # runs always execute every tag, and main-branch pushes keep full web
+  # crypto signal. Hoisted to workflow level (was per-job on the old single
+  # unit_tests job) so every split job below inherits it without repeating
+  # it; the expression only reads the `github` context, which top-level
+  # workflow `env:` is documented to support.
+  WEB_EXCLUDE_TAGS: ${{ github.event_name == 'pull_request' && 'slow-web-crypto' || '' }}
+
 defaults:
   run:
     shell: bash -leo pipefail {0}
 
+# ---------------------------------------------------------------------------
+# unit_tests speed-up (2026): this used to be ONE job per sdk channel running
+# every step below SEQUENTIALLY (format -> analyze -> VM -> Chrome -> Firefox
+# -> jose Chrome -> jose Firefox -> oidc_web_core coverage -> oidc_web Chrome
+# -> Flutter -> coverage combine), making it the critical path of the whole
+# workflow on main pushes (~41m stable / ~35m beta, measured on run
+# 37423292012 -- the native integration jobs below are already <=25m after
+# #492's sharding). Split into independently-schedulable jobs so the
+# INDEPENDENT suites (VM, Chrome, Firefox, jose Chrome shards, jose Firefox
+# shards) run CONCURRENTLY on the same ubuntu-latest pool the old single job
+# used -- no macOS-pool-style concurrency cap applies here (see the
+# ios/macos job comments further down for that constraint; it does not
+# apply to this workflow's Linux-only unit-test jobs).
+#
+# Coverage plumbing: each coverage-producing job (unit_core's VM leg,
+# unit_flutter, unit_webcore_coverage) flattens its own packages'
+# coverage/lcov.info files into coverage/flat/<package>.info -- the same
+# flatten-before-upload pattern the android/ios/linux/windows jobs already
+# use for their *-coverage.info artifacts below, which sidesteps
+# actions/upload-artifact's common-ancestor path stripping for a glob like
+# packages/*/coverage/lcov.info -- and uploads them under a job-specific
+# artifact name. unit_tests_coverage downloads every such artifact and lets
+# combine_coverage (which recursively discovers *.info files and rewrites
+# their embedded absolute SF: paths via --repo-path -- the same mechanism
+# the upload-coverage job below already relies on for the native coverage
+# artifacts) merge them, re-emitting the exact "package-coverage" artifact
+# the old single job produced. upload-coverage below needs no changes to
+# its own steps, only to its `needs:`/`if:` (every job this split
+# introduces must be accounted for there, same as `unit_tests` was before).
+# ---------------------------------------------------------------------------
 jobs:
-  unit_tests:
+  # Format + analyze (stable only, unchanged) + VM tests (both channels) +
+  # VM coverage formatting (stable only). The "analyze+VM" leg from the
+  # design doc: Set up 31s + Analyze 63s + Test VM 188s in the baseline.
+  # timeout-minutes (job level): measured max ~7m16s end-to-end (setup +
+  # format + analyze + VM + coverage format/upload, across several runs on
+  # both channels). 25m is ~3.4x that, with headroom above the VM step's
+  # own 12m bound for setup/format/analyze. Added after run 37486189186's
+  # unit_core (beta) job hung 85+ minutes in "Test Dart packages [VM]" with
+  # NO bound at all (GitHub's default job timeout is 360 minutes) until a
+  # human cancelled it -- every package had already printed its own
+  # "N tests passed" summary (oidc_core's, the last one, at the 4-minute
+  # mark), so the hang was melos's exec wrapper never returning after an
+  # orphaned `dart:test.dart-` process from a mid-run "Connection reset by
+  # peer" on x509_plus's VM-service websocket. See the VM step below for
+  # the matching per-step bound.
+  unit_core:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        sdk: [min, stable, beta]
-    env:
-      TEST_PRESET: all
+        sdk: [stable, beta]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/flutter_base
         with:
-          channel: ${{ matrix.sdk == 'min' && 'stable' || matrix.sdk }}
-          flutter-version: ${{ matrix.sdk == 'min' && '3.22.0' || '' }}
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
       - run: |
           echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
       - name: "[Verify step] ✨ Format"
@@ -49,27 +116,590 @@ jobs:
       - name: "[Verify step] 🕵️ Analyze packages"
         if: ${{ matrix.sdk == 'stable' }}
         run: melos run analyze
-      # - name: '[Verify step] 🕵️ Run Pana'
-      #   if: ${{ matrix.sdk == 'stable' }}
-      #   run: |
-      #     flutter pub global activate pana
-      #     melos run pana
+      # timeout -k 10 600 bounds the hang above (an orphaned `dart test`
+      # kept the step alive after every package had printed its summary).
+      # Without --foreground, GNU timeout runs melos in its own process
+      # group and signals the whole group (TERM at 600s, KILL 10s later),
+      # which reaches the per-package `dart test` children; --foreground
+      # would signal melos alone. Normal runs take well under 4 minutes.
+      # The step timeout-minutes is a backstop.
       - name: "[Verify step] Test Dart packages [VM]"
-        run: melos run test:vm
+        timeout-minutes: 12
+        run: timeout -k 10 600 melos run test:vm
+      - name: "[Coverage] Format VM coverage for each package"
+        if: ${{ matrix.sdk == 'stable' }}
+        run: |
+          set -e
+          dart pub global activate coverage
+          melos run coverage:format:package
+      - name: "[Coverage] Flatten VM coverage for upload"
+        if: ${{ matrix.sdk == 'stable' }}
+        run: |
+          set -e
+          mkdir -p coverage/flat
+          shopt -s nullglob
+          for f in packages/*/coverage/lcov.info; do
+            pkg="$(basename "$(dirname "$(dirname "$f")")")"
+            cp "$f" "coverage/flat/${pkg}.info"
+          done
+          ls -la coverage/flat
+      - name: Upload VM coverage
+        if: ${{ matrix.sdk == 'stable' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-coverage-vm-stable
+          path: coverage/flat/*.info
+          if-no-files-found: error
+
+  # Dart Web tests in Chrome, split out of the old single job so it runs
+  # concurrently with Firefox/VM/jose instead of after them. PRs keep the
+  # package-scoped PR-scope retry loop (runs `dart test` directly, NOT via
+  # melos -- see the step below, unchanged rationale from the old job: keep
+  # this command literally in sync with test:web:pr:single in pubspec.yaml).
+  # Main pushes run the full multi-package sweep via melos. No coverage is
+  # collected on this leg in either scope -- unchanged from the original job
+  # (see test:web:single's comment on #372 for why browser coverage is
+  # collected separately, per-file, for oidc_web_core only).
+  # timeout-minutes (job level): a pure backstop above this job's OWN
+  # step-level bounds (18m PR-scope, 150m push-scope full sweep -- see
+  # below), sized at step-max + setup/checkout overhead so it never fires
+  # ahead of those; it only protects against something ELSE hanging (e.g.
+  # checkout or melos bootstrap) with no bound of its own. Measured actual
+  # durations are far smaller (~2-4m PR-scope, ~4-7m push-scope).
+  unit_chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
+      # set +e / retry loop: the #372 hang strikes this step at random
+      # (roughly half of executions on bad days); an honest run takes
+      # 20-90s. Each try is bounded at 5 minutes; three tries turn manual
+      # whole-job rerun roulette into an automatic in-step retry, while a
+      # REAL test failure still fails fast three times and blocks the PR.
+      - name: "[Verify step] Test Dart packages [Chrome, PR scope]"
+        if: ${{ github.event_name == 'pull_request' }}
+        timeout-minutes: 18
+        working-directory: packages/oidc_web_core
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            timeout --foreground -k 10 300 dart test --suite-load-timeout 4m --concurrency=1 --platform chrome --chain-stack-traces
+            rc=$?
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            echo "chrome PR-scope attempt $attempt exited rc=$rc; retrying" || true
+          done
+          exit 1
+      # Push scope: full multi-package sweep (all web-tested Dart packages
+      # except jose_plus/oidc_cli -- see test:web:single's packageFilters).
+      # timeout-minutes is the backstop of last resort -- a browser wedge
+      # can strike outside package:test's own timeouts (run 29148902320: a
+      # Firefox step hung 57+ min with the 4m load bound active); the
+      # runner kills the whole process tree so the step fails loudly and is
+      # rerunnable instead of idling to GitHub's 6h job kill.
       - name: "[Verify step] Test Dart packages [Chrome]"
+        if: ${{ github.event_name != 'pull_request' }}
+        timeout-minutes: 150
         run: melos run test:web:chrome
+
+  # Dart Web tests in Firefox -- mirrors unit_chrome. The PR-scope Firefox
+  # step keeps continue-on-error: true (unchanged): forensics on the #372
+  # Firefox freeze (run 29162814103) showed it strikes mid-suite with even
+  # the in-browser per-test timer frozen, and the identical step passes in
+  # ~57s when the freeze doesn't strike. Chrome stays blocking; full Firefox
+  # signal still runs on every main push via the push-scope step below,
+  # which has NO continue-on-error (unchanged).
+  # timeout-minutes (job level): same reasoning as unit_chrome above -- a
+  # backstop above this job's own step-level bounds (18m PR-scope, 150m
+  # push-scope), not the primary gate.
+  unit_firefox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
+      - name: "[Verify step] Test Dart packages [Firefox, PR scope]"
+        if: ${{ github.event_name == 'pull_request' }}
+        timeout-minutes: 18
+        continue-on-error: true
+        working-directory: packages/oidc_web_core
+        env:
+          MOZ_HEADLESS: "1"
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            timeout --foreground -k 10 300 dart test --suite-load-timeout 4m --concurrency=1 --platform firefox --chain-stack-traces
+            rc=$?
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            echo "firefox PR-scope attempt $attempt exited rc=$rc; retrying" || true
+          done
+          exit 1
       - name: "[Verify step] Test Dart packages [Firefox]"
+        if: ${{ github.event_name != 'pull_request' }}
+        timeout-minutes: 150
         run: melos run test:web:firefox
+
+  # jose_plus per-file Chrome runs, sharded N=4 ways. jose's multi-suite
+  # `dart test` completes every suite then never exits on Firefox/Chrome
+  # (post-success exit hang, dart-lang/test#2294 class, #372); one file per
+  # process already sidesteps the hang (15/16 suites exit clean alone), and
+  # this additionally shards those per-file runs across 4 parallel jobs
+  # instead of one job looping through all 16 files serially (measured
+  # 560s/736s Chrome/Firefox on main -- ~4x wall-time cut per browser,
+  # modulo per-shard dart2js compile overhead). main-push only, matching the
+  # original job (PRs never ran jose_plus here at all -- its only PR-scope
+  # coverage is the VM leg in unit_core, which runs every tag regardless of
+  # event).
+  # Deterministic partition, computed independently inside each shard job
+  # (not via a separate manifest) from `ls test/*_test.dart | sort`: every
+  # shard recomputes the FULL partition and asserts (a) the full file list
+  # is non-empty, (b) every one of the 4 shards' slices is non-empty, and
+  # (c) the slices' sizes sum to the full count -- so a shard running 0
+  # files, or a bug that drops a file from every shard, fails loudly instead
+  # of silently losing coverage.
+  unit_jose_chrome:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: packages/jose_plus
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
+      - name: "[Verify step] Test jose_plus [Chrome, shard ${{ matrix.shard }}/4]"
+        run: |
+          set -e
+          SHARDS=4
+          MY_SHARD=${{ matrix.shard }}
+          mapfile -t ALL_FILES < <(ls test/*_test.dart | sort)
+          TOTAL=${#ALL_FILES[@]}
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::no jose_plus test/*_test.dart files found -- partition is vacuous"
+            exit 1
+          fi
+          declare -A COUNTS
+          for ((i=0; i<TOTAL; i++)); do
+            s=$(( i % SHARDS + 1 ))
+            COUNTS[$s]=$(( ${COUNTS[$s]:-0} + 1 ))
+          done
+          SUM=0
+          for ((s=1; s<=SHARDS; s++)); do
+            c=${COUNTS[$s]:-0}
+            SUM=$(( SUM + c ))
+            if [ "$c" -eq 0 ]; then
+              echo "::error::shard $s of $SHARDS would run 0 files out of $TOTAL total -- refusing to run an empty shard"
+              exit 1
+            fi
+          done
+          if [ "$SUM" -ne "$TOTAL" ]; then
+            echo "::error::partition bug: shards sum to $SUM files but $TOTAL were found (a file landed in no shard, or was double-counted)"
+            exit 1
+          fi
+          echo "Partition OK: $TOTAL files across $SHARDS shards (counts: $(for s in "${!COUNTS[@]}"; do printf '%s=%s ' "$s" "${COUNTS[$s]}"; done))"
+          MY_FILES=()
+          for ((i=0; i<TOTAL; i++)); do
+            s=$(( i % SHARDS + 1 ))
+            if [ "$s" -eq "$MY_SHARD" ]; then
+              MY_FILES+=("${ALL_FILES[$i]}")
+            fi
+          done
+          echo "Shard $MY_SHARD/$SHARDS running ${#MY_FILES[@]} file(s): ${MY_FILES[*]}"
+          for f in "${MY_FILES[@]}"; do
+            dart test "$f" --timeout 60m --suite-load-timeout 2h --platform chrome --chain-stack-traces ${WEB_EXCLUDE_TAGS:+--exclude-tags "$WEB_EXCLUDE_TAGS"}
+          done
+
+  # Mirrors unit_jose_chrome for Firefox. No continue-on-error (unchanged --
+  # only the PR-scope oidc_web_core Firefox step in unit_firefox is
+  # advisory; this full per-file sweep is blocking, same as the original job).
+  unit_jose_firefox:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: packages/jose_plus
+    env:
+      MOZ_HEADLESS: "1"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
+      - name: "[Verify step] Test jose_plus [Firefox, shard ${{ matrix.shard }}/4]"
+        run: |
+          set -e
+          SHARDS=4
+          MY_SHARD=${{ matrix.shard }}
+          mapfile -t ALL_FILES < <(ls test/*_test.dart | sort)
+          TOTAL=${#ALL_FILES[@]}
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::no jose_plus test/*_test.dart files found -- partition is vacuous"
+            exit 1
+          fi
+          declare -A COUNTS
+          for ((i=0; i<TOTAL; i++)); do
+            s=$(( i % SHARDS + 1 ))
+            COUNTS[$s]=$(( ${COUNTS[$s]:-0} + 1 ))
+          done
+          SUM=0
+          for ((s=1; s<=SHARDS; s++)); do
+            c=${COUNTS[$s]:-0}
+            SUM=$(( SUM + c ))
+            if [ "$c" -eq 0 ]; then
+              echo "::error::shard $s of $SHARDS would run 0 files out of $TOTAL total -- refusing to run an empty shard"
+              exit 1
+            fi
+          done
+          if [ "$SUM" -ne "$TOTAL" ]; then
+            echo "::error::partition bug: shards sum to $SUM files but $TOTAL were found (a file landed in no shard, or was double-counted)"
+            exit 1
+          fi
+          echo "Partition OK: $TOTAL files across $SHARDS shards (counts: $(for s in "${!COUNTS[@]}"; do printf '%s=%s ' "$s" "${COUNTS[$s]}"; done))"
+          MY_FILES=()
+          for ((i=0; i<TOTAL; i++)); do
+            s=$(( i % SHARDS + 1 ))
+            if [ "$s" -eq "$MY_SHARD" ]; then
+              MY_FILES+=("${ALL_FILES[$i]}")
+            fi
+          done
+          echo "Shard $MY_SHARD/$SHARDS running ${#MY_FILES[@]} file(s): ${MY_FILES[*]}"
+          for f in "${MY_FILES[@]}"; do
+            dart test "$f" --timeout 60m --suite-load-timeout 2h --platform firefox --chain-stack-traces ${WEB_EXCLUDE_TAGS:+--exclude-tags "$WEB_EXCLUDE_TAGS"}
+          done
+
+  # oidc_web_core browser coverage (per-file, hang-safe): the only package
+  # whose browser coverage isn't a duplicate of its VM coverage, so the only
+  # one collected on the web side. stable + main-push only (coverage is
+  # combined on the stable leg; PRs don't collect browser coverage),
+  # unchanged from the original job.
+  unit_webcore_coverage:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: stable
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=stable >> $GITHUB_ENV
+      - name: "[Coverage] oidc_web_core browser coverage (per-file, hang-safe)"
+        working-directory: packages/oidc_web_core
+        run: |
+          set -e
+          rm -rf coverage/chrome
+          for f in test/*_test.dart; do
+            dart test "$f" --suite-load-timeout 4m --platform chrome --coverage=coverage/chrome --chain-stack-traces
+          done
+      - name: "[Coverage] Format oidc_web_core coverage"
+        run: |
+          set -e
+          dart pub global activate coverage
+          melos run coverage:format:package
+      - name: "[Coverage] Flatten oidc_web_core coverage for upload"
+        run: |
+          set -e
+          mkdir -p coverage/flat
+          cp packages/oidc_web_core/coverage/lcov.info coverage/flat/oidc_web_core.info
+          ls -la coverage/flat
+      - name: Upload oidc_web_core coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-coverage-webcore-stable
+          path: coverage/flat/*.info
+          if-no-files-found: error
+
+  # oidc_web (#370): the only Flutter *plugin* package with browser-only lib
+  # code. Runs on both PR and push (unchanged); no coverage collected here
+  # (the original step has no --coverage flag either).
+  # timeout-minutes (job level): backstop above the 10m step-level bound
+  # already on the test step below (setup overhead ~2-3m).
+  unit_oidc_web_chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
+      - name: "[Verify step] Test oidc_web [Chrome]"
+        timeout-minutes: 10
+        run: melos run test:oidc_web:chrome
+
+  # Flutter-package unit tests + the example's own unit tests (the latter is
+  # test signal only, not part of CI's coverage upload -- unchanged from the
+  # original job). `flutter test --coverage` writes lcov.info directly, no
+  # format_coverage step needed (unchanged).
+  # timeout-minutes (job level): this job had NO timeout at all (step or
+  # job) before this change. Measured max ~2m08s end-to-end across
+  # several runs; 10m is ~5x that -- generous because `flutter test` on
+  # the example app is the one step here that hasn't been individually
+  # measured in isolation.
+  unit_flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [stable, beta]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: ${{ matrix.sdk }}
+          flutter-version: ""
+      - run: |
+          echo TARGET_DART_SDK=${{ matrix.sdk }} >> $GITHUB_ENV
       - name: Remove dart_test.yaml Files
         run: melos run remove_dart_test_yaml
       - name: "[Verify step] Test Flutter packages"
         run: melos run test:flutter
-      - name: "[Coverage] Format & print test coverage"
+      - name: "[Verify step] Test the example's unit tests"
+        # melos `test:flutter` filters `ignore: ["*example*"]` (pubspec.yaml),
+        # and the only other thing CI runs out of packages/oidc/example is
+        # `flutter test integration_test/...` in the platform jobs. So every
+        # file under packages/oidc/example/test/ ran in NO job: the
+        # conformance variant rules, the plan gates, the flow-timeout budget
+        # and the patrol tally reconciler all passed locally and gated
+        # nothing. They are the guards for a harness that drives a live
+        # third-party server, which is exactly the code that cannot be
+        # re-verified cheaply after the fact.
+        working-directory: packages/oidc/example
+        run: flutter test
+      - name: "[Coverage] Flatten Flutter package coverage for upload"
         if: ${{ matrix.sdk == 'stable' }}
-        run: melos run coverage:combine
+        run: |
+          set -e
+          mkdir -p coverage/flat
+          shopt -s nullglob
+          for f in packages/*/coverage/lcov.info; do
+            pkg="$(basename "$(dirname "$(dirname "$f")")")"
+            cp "$f" "coverage/flat/${pkg}.info"
+          done
+          ls -la coverage/flat
+      - name: Upload Flutter coverage
+        if: ${{ matrix.sdk == 'stable' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-coverage-flutter-stable
+          path: coverage/flat/*.info
+          if-no-files-found: error
+
+  # Merges every coverage-producing unit job above (unit_core's VM leg,
+  # unit_flutter, unit_webcore_coverage) back into the single
+  # "package-coverage" artifact the old single job produced, so
+  # upload-coverage below is unchanged. unit_webcore_coverage is skipped
+  # entirely on PRs (see its own `if:`), so this job tolerates that specific
+  # dependency being 'skipped' while still requiring unit_core/unit_flutter
+  # to have actually succeeded -- otherwise a real failure upstream would be
+  # masked by `always()`.
+  # timeout-minutes (job level): this job had NO timeout at all before this
+  # change. Measured max ~57s-1m end-to-end across several runs; 10m is a
+  # generous margin given the artifact download and dart pub global
+  # activate steps are network-dependent and not purely CPU-bound like the
+  # measured samples.
+  unit_tests_coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [unit_core, unit_flutter, unit_webcore_coverage]
+    if: |
+      always() &&
+      needs.unit_core.result == 'success' &&
+      needs.unit_flutter.result == 'success' &&
+      (needs.unit_webcore_coverage.result == 'success' || needs.unit_webcore_coverage.result == 'skipped')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+      - name: Set up Environment
+        uses: ./.github/actions/flutter_base
+        with:
+          channel: stable
+          flutter-version: ""
+      - name: Download unit coverage shards
+        uses: actions/download-artifact@v8
+        with:
+          path: coverage/flat-merged/
+          pattern: "unit-coverage-*-stable"
+          merge-multiple: true
+      # Restores each flattened packages/<pkg>/coverage/lcov.info back to its
+      # NATURAL on-disk location before merging. Confirmed live (run
+      # 37464828887) that skipping this and running combine_coverage
+      # straight over the flat files breaks the Flutter packages: combine_
+      # coverage resolves each file's SF: entries relative to the directory
+      # the file is found in whenever those entries are already
+      # package-relative (not absolute) -- which is exactly how `flutter
+      # test --coverage` writes them (e.g. "SF:lib/facade.dart", no
+      # "packages/<pkg>/" prefix, unlike the VM/format_coverage-generated
+      # files, whose SF: entries are already absolute and therefore survive
+      # being read from anywhere). Flat in coverage/flat-merged/, the four
+      # Flutter packages' guard matched 0 ("SF:/coverage/lib/src/facade.dart"
+      # -- repo-path + "/coverage" + the relative path, with the
+      # "packages/<pkg>/" segment lost entirely). Rebuilding
+      # packages/<pkg>/coverage/lcov.info here makes combine_coverage see
+      # the exact directory layout it always saw in the old single job, for
+      # both path styles.
+      #
+      # `mv`, not `cp`, and an explicit `rm -rf` of the whole download
+      # directory afterward: independent review on PR #494 (run
+      # 37476666335) caught that a `cp` here left the original flat files
+      # sitting in coverage/flat-merged/ too, so combine_coverage's
+      # recursive scan ingested BOTH the restored packages/<pkg>/coverage/
+      # copy AND the stale flat one -- the flat one resolves to the same
+      # bogus "/coverage/<relative-path>" phantom SF: entries described
+      # above, since it's no longer sitting in a per-package directory.
+      # That run's package-coverage artifact had 254 SF: lines for 139
+      # unique files (115 duplicates) and 11 phantom /coverage/... paths.
+      - name: "[Coverage] Restore package-relative coverage layout"
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in coverage/flat-merged/*.info; do
+            pkg="$(basename "$f" .info)"
+            mkdir -p "packages/$pkg/coverage"
+            mv "$f" "packages/$pkg/coverage/lcov.info"
+          done
+          rm -rf coverage/flat-merged
+          find packages -maxdepth 3 -name lcov.info
+      - name: "[Coverage] Combine & convert coverage report"
+        env:
+          REPO_PATH: ${{ github.workspace }}
+        run: |
+          set -e
+          dart pub global activate combine_coverage
+          dart pub global activate remove_from_coverage
+          dart pub global run combine_coverage --repo-path="$REPO_PATH"
+          dart pub global run remove_from_coverage:remove_from_coverage -f coverage/lcov.info -r '\.g\.dart$' -r 'oidc_cli/lib/src/version\.dart$'
+      # Structural guard added alongside the mv/rm fix above: catches this
+      # exact failure mode (and anything similar) directly, instead of
+      # relying only on the package-specific guards below, which can pass
+      # even with duplicate/phantom entries polluting the file (as they did
+      # on run 37476666335 -- the Flutter-package guard below matched fine
+      # because the CORRECT entries were also present, just alongside 115
+      # duplicates it never looked for).
+      - name: "[Coverage] Assert no duplicate or phantom SF entries"
+        run: |
+          set -e
+          total=$(grep -c '^SF:' coverage/lcov.info || true)
+          total=${total:-0}
+          unique=$(grep '^SF:' coverage/lcov.info | sort -u | wc -l | tr -d ' ')
+          echo "guard: SF total=$total unique=$unique"
+          if [ "$total" -ne "$unique" ]; then
+            echo "::error::coverage/lcov.info has $((total - unique)) duplicate SF: line(s) out of $total - a source file's coverage was recorded more than once (a stale intermediate coverage artifact leaking into the merge?)"
+            echo "guard: duplicated SF: entries:"
+            grep '^SF:' coverage/lcov.info | sort | uniq -c | awk '$1>1 {print}' | head -20
+            exit 1
+          fi
+          missing=0
+          while IFS= read -r sf; do
+            p="${sf#SF:}"
+            p="${p#/}"
+            if [ -z "$p" ] || [ ! -f "$p" ]; then
+              echo "::error::coverage/lcov.info references a path that doesn't exist in this checkout: $sf"
+              missing=1
+            fi
+          done < <(grep '^SF:' coverage/lcov.info | sort -u)
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "guard: all $total SF: entries are unique and point to real files in the checkout"
+      - name: "[Coverage] Assert Flutter package coverage survived"
+        # Regression guard, unchanged from the original job. `flutter test
+        # --coverage` writes coverage/lcov.info directly; running
+        # format_coverage over that directory finds no VM hitmap .json,
+        # exits 0, and truncates the file to 0 bytes. That silently dropped
+        # every Flutter package's unit coverage from the upload with no
+        # failing step. Fail loudly if it ever comes back.
+        run: |
+          wc -c coverage/lcov.info || true
+          echo "guard: first 10 SF entries:"
+          grep -o -m 10 'SF:[^[:cntrl:]]*' coverage/lcov.info || true
+          missing=0
+          for p in oidc oidc_default_store oidc_platform_interface oidc_desktop; do
+            n=$(grep -c "packages/$p/lib/" coverage/lcov.info || true)
+            n=${n:-0}
+            echo "guard: packages/$p/lib/ -> $n match(es)"
+            if [ "$n" -eq 0 ]; then
+              echo "::error::no unit coverage recorded for packages/$p - Flutter coverage is being discarded again"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "guard: all four Flutter packages present in the combined lcov"
+      - name: "[Coverage] Assert oidc_web_core browser coverage survived"
+        # main + stable only, unchanged from the original job.
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          n=$(grep -c "packages/oidc_web_core/lib/" coverage/lcov.info || true)
+          n=${n:-0}
+          echo "guard: packages/oidc_web_core/lib/ -> $n match(es)"
+          if [ "$n" -eq 0 ]; then
+            echo "::error::no browser coverage for oidc_web_core - the per-file oidc_web_core coverage step is being discarded"
+            exit 1
+          fi
+          echo "guard: oidc_web_core browser coverage present in the combined lcov"
       - name: Upload Unit Test Coverage Report
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.sdk == 'stable' }}
+        uses: actions/upload-artifact@v7
         with:
           name: package-coverage
           path: coverage/lcov.info
@@ -77,55 +707,271 @@ jobs:
   # integration tests
   android:
     runs-on: ubuntu-latest
+    # Sharded 4 ways (not 2, like ios -- see that job's comment): this job
+    # runs on ubuntu-latest, drawing from GitHub's large general-purpose
+    # concurrent-job pool (20-60 depending on plan), not the much smaller
+    # 5-job *concurrent macOS jobs* cap that constrains ios/macos, so there's
+    # no cross-job concurrency budget to conserve here. CONFORMANCE_SHARD,
+    # read by patrol_test/app_test.dart, splits the 13 conformance plans into
+    # 4 parallel matrix legs instead of one job running them all sequentially.
+    # The AVD cache key below is intentionally NOT shard-scoped: the snapshot
+    # itself doesn't depend on which plans a leg runs, so every shard shares
+    # it (concurrent cache restores are fine; a cold-cache run may have more
+    # than one shard attempt to save the same key, which is a harmless no-op
+    # for whichever shard loses that race).
     strategy:
+      fail-fast: false
       matrix:
-        api-level: [29]
+        shard: [basic, implicit, hybrid, rest]
+        api-level: [33]
+        arch: [x86_64]
+        # google_apis, not `default`: the AOSP image ships no browser, so the
+        # authorization URL cannot open. Not google_apis_playstore either; its
+        # locked-down adb does not accept the runner's key under this job's
+        # relocated ANDROID_SDK_HOME, and the AVD never finishes booting.
+        target: [google_apis]
     defaults:
       run:
         working-directory: packages/oidc/example
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
+      - name: Free disk space
+        run: |
+          set -euxo pipefail
+          df -h
+          # Keep Android SDK (we need it). Remove other heavy toolchains.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          sudo docker builder prune -a --force || true
+          df -h
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Configure Android AVD home
+        run: |
+          # GitHub hosted runners have more free space under /mnt than $HOME.
+          # This prevents "Not enough space to create userdata partition" errors.
+          echo "ANDROID_SDK_HOME=/mnt/.android" >> $GITHUB_ENV
+          echo "ANDROID_AVD_HOME=/mnt/.android/avd" >> $GITHUB_ENV
+          sudo mkdir -p /mnt/.android/avd
+          sudo chown -R "$USER":"$USER" /mnt/.android
+
+      # gradle/actions/setup-gradle's own `cache-read-only` default is
+      # `${{ github.ref_name != github.event.repository.default_branch }}`
+      # -- i.e. already read-only on every PR/branch run, write-enabled
+      # only on pushes to main. That default doesn't account for this job
+      # being matrix-sharded 4 ways (basic/implicit/hybrid/rest): on a main
+      # push, all 4 shards run concurrently and ALL get write-enabled by
+      # that default, independently populating the (mostly OS/project-
+      # keyed, not shard-keyed) gradle-dependencies-v2/gradle-transforms-v2
+      # entries. Confirmed live via `gh api repos/Bdaya-Dev/oidc/actions/
+      # caches`: two sibling entries each for gradle-dependencies-v2
+      # (1.13GB + 0.67GB) and gradle-transforms-v2 (1.31GB + 0.47GB) --
+      # different shards' concurrent first-save races producing
+      # non-identical content for what should be one shared entry, instead
+      # of the normal harmless "first writer wins" no-op. Explicitly
+      # layering a single-writer rule on top (keeping the upstream default
+      # untouched for every non-default-branch case, where it's already
+      # correct) fixes this: only the `basic` shard gets write access on
+      # main; `implicit`/`hybrid`/`rest` are forced read-only there too, so
+      # exactly one shard ever saves.
       - name: Gradle cache
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref_name != github.event.repository.default_branch || matrix.shard != 'basic' }}
       - name: Run flutter precache
         run: flutter precache -v
+      # Native (Kotlin/Robolectric) tests for the oidc_android plugin, covering
+      # the redirect-capture path the Dart suite cannot reach: it mocks the
+      # Pigeon channel, so OidcPlugin.kt never executes there. JVM-only, so it
+      # needs no emulator and fails fast, ahead of one.
+      - name: "[Verify step] Native Android unit tests (oidc_android)"
+        # gradlew / gradle-wrapper.jar are gitignored repo-wide (only
+        # gradle-wrapper.properties is tracked), so a fresh checkout has no
+        # wrapper to invoke. --config-only generates the android build files
+        # without building any artifact.
+        run: |
+          flutter build apk --config-only
+          cd android
+          ./gradlew :oidc_android:testDebugUnitTest -PoidcNativeTests
       - name: AVD cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-${{ matrix.api-level }}
+            /mnt/.android/avd/*
+            /mnt/.android/adb*
+          # include arch + target to avoid reusing old 32-bit / browserless images
+          key: avd-${{ matrix.api-level }}-${{ matrix.arch }}-${{ matrix.target }}-novulkan
 
       - name: create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+          force-avd-creation: true
+          # For snapshot caching, do NOT use -no-snapshot.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 900
           script: echo "Generated AVD snapshot for caching."
       - name: Run flutter precache
         run: flutter precache -v
-      - name: Run flutter doctor
-        run: flutter doctor -v
+      - name: Activate Patrol CLI (patrol_cli_plus)
+        run: dart pub global activate patrol_cli_plus
+      - name: Prepare Android integration script
+        run: |
+          cat <<'EOF' > android_emulator_ci.sh
+          #!/usr/bin/env bash
+          set -eo pipefail
+
+          # patrol_cli_plus installs the `patrol_plus` executable into the pub
+          # cache bin; make sure it's resolvable inside the emulator-runner shell.
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+
+          echo "ADB devices before:"
+          adb devices -l || true
+
+          # Wait for a device to be 'device' (boot completed)
+          adb wait-for-device
+
+          # Pick the first Android device id
+          EMU_ID="$(adb devices | while read -r serial state _; do if [ "$state" = "device" ]; then echo "$serial"; break; fi; done)"
+          if [ -z "$EMU_ID" ]; then
+            echo "No Android device found. Available devices:"
+            flutter devices
+            exit 1
+          fi
+
+          echo "Using device: $EMU_ID"
+          flutter devices
+
+          # The conformance leg needs a browser that lacks Auth Tab support to
+          # be meaningful, so record what this image actually ships. "No browser"
+          # and "browser present but redirect not captured" are different defects
+          # with different fixes.
+          echo "--- browser packages on the emulator (pre-install) ---"
+          adb -s "$EMU_ID" shell pm list packages | grep -iE 'chrome|browser|webview|firefox' || echo "NO browser/chrome/webview package matched"
+          echo "--- what resolves an https VIEW intent ---"
+          adb -s "$EMU_ID" shell 'cmd package resolve-activity --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d https://example.com' || true
+          echo "--- end pre-install diagnostics ---"
+
+          # A first-run device shows Chrome's welcome/ToS gate, and a Custom Tab
+          # opened behind it never reaches the auth URL, so no redirect returns.
+          #
+          # /data/local/tmp, not /data/local: the latter is SELinux-blocked. The
+          # first token is a placeholder because Chrome parses the file as an argv
+          # line and discards element 0.
+          # Ref: chromium.org/developers/how-tos/run-chromium-with-flags
+          echo "--- suppressing Chrome first-run ---"
+          adb -s "$EMU_ID" root >/dev/null 2>&1 || true
+          adb -s "$EMU_ID" shell 'echo "_ --no-first-run --disable-fre --no-default-browser-check" > /data/local/tmp/chrome-command-line' || true
+          adb -s "$EMU_ID" shell 'am set-debug-app --persistent com.android.chrome' || true
+          adb -s "$EMU_ID" shell 'cat /data/local/tmp/chrome-command-line' || true
+          echo "--- end Chrome first-run suppression ---"
+          # Runs every patrol_test/*_test.dart (conformance + e2e + offline) on
+          # the emulator and collects Dart coverage via the VM service.
+          # --verbose: patrol forwards NO test stdout without it, so neither the
+          # test names nor the "Total: N" summary reach the job log.
+          # `set -eo pipefail` is set above, so tee preserves patrol's exit code.
+          # Capture the status rather than letting `set -e` abort here: the
+          # diagnostics below matter most when the run failed. Honoured at the end.
+          set +e
+          patrol_plus test \
+            --coverage \
+            --coverage-ignore="**/*.g.dart" \
+            --coverage-workspace \
+            -d "$EMU_ID" \
+            --verbose \
+            --dart-define=CI=true \
+            --dart-define=CONFORMANCE_SHARD=${CONFORMANCE_SHARD} \
+            --dart-define=OIDC_CONFORMANCE_TOKEN=${OIDC_CONFORMANCE_TOKEN} \
+            2>&1 | tee patrol-android.log
+          PATROL_RC=${PIPESTATUS[0]}
+          set -e
+          echo "patrol exit status: $PATROL_RC"
+
+          # POST-INSTALL, which is the only point this means anything: patrol is what
+          # builds and installs the APK, so probing before it always reports "No
+          # activity found" whether or not the manifest is wired.
+          #
+          # Direct check that the merged manifest registered OidcRedirectActivity
+          # for the app's redirect scheme. If it resolves, capture is wired and a
+          # remaining failure is browser or flow side; if not, the wiring is.
+          # Read the manifest from the APK patrol built, not from the device:
+          # patrol uninstalls the app when it finishes, so an adb probe afterwards
+          # always reports it missing. This reads the bytes that were installed.
+          echo "--- APK manifest: which scheme is OidcRedirectActivity registered for? ---"
+          APK="$(find build/app/outputs -name 'app-debug.apk' -print -quit 2>/dev/null || true)"
+          echo "apk: ${APK:-<none found>}"
+          if [ -n "$APK" ]; then
+            AAPT2="$(find "$ANDROID_SDK_ROOT/build-tools" "$ANDROID_HOME/build-tools" -name aapt2 -type f 2>/dev/null | sort | tail -1)"
+            echo "aapt2: ${AAPT2:-<none found>}"
+            if [ -n "$AAPT2" ]; then
+              "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" 2>/dev/null \
+                | grep -A 12 'OidcRedirectActivity' | head -20 || echo "OidcRedirectActivity NOT in the APK manifest"
+            fi
+          fi
+          echo "--- end post-run diagnostics ---"
+
+          # patrol_cli_plus exits 0 on a run that executed nothing, because its
+          # android backend only inspects gradle's exit code. Until a release
+          # carries the upstream guard, assert the count here so a green job
+          # cannot mean "no tests ran".
+          TOTAL="$(grep -oE 'Total:[[:space:]]*[0-9]+' patrol-android.log | tail -1 | grep -oE '[0-9]+' || true)"
+          echo "Android patrol executed ${TOTAL:-<no Total line>} test(s)."
+          if [ -z "$TOTAL" ]; then
+            echo "::error::patrol printed no 'Total:' line - cannot prove any test ran."
+            exit 1
+          fi
+          if [ "$TOTAL" -lt 4 ]; then
+            echo "::error::patrol executed $TOTAL test(s), expected at least 4 (app_test + 3 offline_mode_test)."
+            exit 1
+          fi
+          # patrol writes coverage/patrol_lcov.info; rename for the combine
+          # step. Shard-suffixed so the 4 matrix legs' coverage files don't
+          # collide once upload-coverage's merge-multiple download flattens
+          # every *-integration-coverage artifact into one directory.
+          cp coverage/patrol_lcov.info "coverage/android-${CONFORMANCE_SHARD}-coverage.info"
+
+          # Deferred above so the diagnostics always run. The count ratchet is an
+          # additional gate, not a replacement: a run can execute every test and
+          # still fail one.
+          if [ "$PATROL_RC" -ne 0 ]; then
+            echo "::error::patrol reported failure (exit $PATROL_RC); see the test output above."
+            exit "$PATROL_RC"
+          fi
+          EOF
+          chmod +x android_emulator_ci.sh
       - name: Run Android Emulator and Integration Tests
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
+          CONFORMANCE_SHARD: ${{ matrix.shard }}
         with:
           working-directory: packages/oidc/example
           api-level: ${{ matrix.api-level }}
-          script: melos run integration_test:android
+          arch: ${{ matrix.arch }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 900
+          target: ${{ matrix.target }}
+          script: ./android_emulator_ci.sh
+      # Diagnostics only, same reasoning as the iOS job: moved off the normal
+      # path and gated on failure so it no longer costs anything when the run
+      # is healthy.
+      - name: Run flutter doctor
+        if: failure()
+        run: flutter doctor -v
       - name: Find .info files and files in coverage folders
         run: |
           echo "Listing all .info files and files inside any coverage/ directory:"
@@ -133,179 +979,853 @@ jobs:
           echo "$GITHUB_WORKSPACE"
           find "$GITHUB_WORKSPACE" \( -name "*.info" -o -path "*/coverage/*" \) -type f -exec ls -l {} +
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: android-integration-coverage
-          path: packages/oidc/example/coverage/android-coverage.info
+          name: android-${{ matrix.shard }}-integration-coverage
+          path: packages/oidc/example/coverage/android-${{ matrix.shard }}-coverage.info
           include-hidden-files: true
           if-no-files-found: error
 
   ios:
-    runs-on: macos-latest
+    # Gating iOS environment: macos-26 image, Xcode 26.6 (selected explicitly
+    # in the step below), iOS 26 simulator. Previously pinned to macos-15
+    # (Xcode 16.4) because XCUITest's app relaunch between patrolTests failed
+    # on Xcode 26 ("Failed to terminate com.bdayadev:..." -> xcodebuild exit
+    # 65) even though every Dart test passed. That is now fixed in our patrol
+    # fork and shipped to pub.dev:
+    #   - patrol_plus >= 5.6.1 suppresses the benign XCUITest app
+    #     relaunch/terminate framework failures (Bdaya-Dev/patrol#15) so they
+    #     no longer fail the run; a genuine Dart-test failure is unaffected.
+    #   - patrol_cli_plus >= 5.4.1 defaults xcodebuild's -destination-timeout
+    #     to 30s (was a hardcoded 1s), fixing the exit-70 device-resolution
+    #     race on the slow macos-26 simulator.
+    # Validated green across multiple full-suite runs with the flake firing
+    # and being suppressed each time; the macos-15 pin is lifted. Xcode 26.6
+    # (not the image default 26.5) is selected because the XCUITest relaunch
+    # flake is markedly rarer on 26.6.
+    #
+    # Sharded, but only 2 ways, not 4 -- the 13 conformance plans used to run
+    # sequentially in one job (~1326s of the ~29min job on run 37346215172 --
+    # Hybrid RP alone is ~262s). CONFORMANCE_SHARD (read by
+    # patrol_test/app_test.dart) splits them into 2 parallel matrix legs,
+    # "heavy" (Hybrid RP + Implicit RP, the two slowest plans, ~445s by the
+    # same run's per-plan timing) and "light" (Basic RP + everything else,
+    # ~364s), chosen to land close to half the total each.
+    #
+    # 2 ways, not 4: GitHub caps *concurrent macOS jobs* at 5 on Free/Pro/Team
+    # (shared across standard AND larger runners -- see
+    # https://docs.github.com/en/actions/reference/limits, "Usage limits"),
+    # separately from and far below the general concurrent-job limit (20-60).
+    # This job and `macos` are the only two macOS-pool consumers in this
+    # workflow. A first attempt sharded both 4 ways each (8 concurrent
+    # macOS-pool requests against a cap of 5): run 37398194429 measured iOS
+    # shards starting at 01:15:08/01:18:23/01:29:43/01:39:46 and finishing at
+    # 01:57:49 -- 42 minutes end-to-end, WORSE than the ~29min unsharded
+    # baseline, because 3 of the 4 shards queued behind the cap instead of
+    # running in parallel. At 2 shards here + macos' now-single job (see that
+    # job's comment -- it reverted to unsharded), this workflow's own
+    # macOS-pool demand is 3, comfortably under 5.
+    #
+    # `needs: [... ios ...]` on upload-coverage already waits for every
+    # matrix leg and skips if any fails/cancels -- no separate aggregator job
+    # is needed for that. No branch-protection required status check
+    # currently names "ios" on this repo (checked via `gh api
+    # repos/Bdaya-Dev/oidc/branches/main/protection` -> 404 "Required status
+    # checks not enabled"), so the per-shard context names ("ios (heavy)" /
+    # "ios (light)" instead of a single "ios") are not a breaking change
+    # today; revisit if required checks are ever turned on for this branch.
+    #
+    # The simulator boot is kicked off in the background (`simctl boot &`,
+    # detached with `disown`) right AFTER "Set up Environment", so it overlaps
+    # only "Run flutter precache" and the Patrol CLI activation. It used to
+    # start before setup, and booting alongside the Flutter install made that
+    # install 3-4x slower (see the note on the boot step). `simctl
+    # bootstatus -b` right before the tests step is the
+    # actual gate: it boots the device if the background kick-off hasn't
+    # finished yet, and either way blocks until CoreSimulatorService reports
+    # the device as *actually* registered -- see the note on that step for
+    # why a bare `boot` is not enough on its own.
+    #
+    # #469: on this runner (macos-26: GitHub's standard arm64 runner, 3 vCPU /
+    # 7 GB RAM) the simulator's browser intermittently takes 30-150s to start,
+    # or never does: WebKit process launches stall while the host swaps. None
+    # of the following made the stalls go away, measured over 2+ iOS runs each:
+    #   * Spotlight indexing off, other simulators shut down, smallest iPhone;
+    #   * sharding (#492);
+    #   * macos-26-intel (4 vCPU / 14 GB): setup and tests ran 2-3x slower and
+    #     both shards hit the 60-minute timeout.
+    # So the harness reruns a module once, on a fresh instance, and only when
+    # the suite still reports that instance WAITING and its log shows no
+    # authorization request ever arriving (refused requests count as
+    # arrived). The gate is shouldRerunModuleOnFreshInstance in
+    # integration_test/conformance/api.dart. It applies on every platform;
+    # only this simulator's stalls have been seen to meet it. The
+    # CONFORMANCE_FORCE_STALL_MODULE dart-define (workflow_dispatch input
+    # ios_force_stall_module, empty by default) forces one such stall to
+    # prove the path end to end.
+    runs-on: macos-26
     timeout-minutes: 60
+    env:
+      # workflow_dispatch input; push/PR runs never pay for heavy diagnostics.
+      # See "Start iOS diagnostics".
+      IOS_HEAVY_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.ios_heavy_diagnostics }}
+      # Test-only; empty (off) unless set by hand on a workflow_dispatch run.
+      IOS_FORCE_STALL_MODULE: ${{ github.event_name == 'workflow_dispatch' && inputs.ios_force_stall_module || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [heavy, light]
     defaults:
       run:
         working-directory: packages/oidc/example
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+      - name: Select Xcode 26.6
+        # The macos-26 image ships several Xcode versions side by side; its
+        # default is 26.5. The patrol#15 XCUITest terminate flake is markedly
+        # less frequent on 26.6, so select it explicitly when present.
+        run: |
+          if [ -d /Applications/Xcode_26.6.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.6.app
+          else
+            echo "::warning::Xcode 26.6 not found; available Xcodes:"
+            ls -d /Applications/Xcode_*.app || true
+          fi
+          xcodebuild -version
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
-        with:
-          channel: master
-          flutter-version: "ca758ac49b0e93798ce3fbe49e2c8ce290d5e136"
-      - name: Start Simulator
-        # Start an iPhone simulator
+        # with:
+        #   channel: master
+        #   flutter-version: "ca758ac49b0e93798ce3fbe49e2c8ce290d5e136"
+      - name: Start Simulator (boot in background)
+        # Kicks off the boot and returns immediately, so the next steps
+        # (flutter precache, Patrol CLI activation) run while the simulator
+        # boots, instead of waiting on it first.
+        #
+        # It deliberately starts AFTER "Set up Environment", not before.
+        # Booting alongside the Flutter install made that install 3-4x slower
+        # on the 3-vCPU runner: setup script 65s with a synchronous boot vs
+        # 178-273s concurrently, and cache-pub's hashFiles 0.5s vs 27-125s.
+        # That net-lost 80-240s per leg (main 6ada33a jobs 112244868347/381 vs
+        # c171634 job 112065979344). The steps it overlaps now are cheap.
+        # `nohup ... & disown`
+        # detaches the boot from this step's shell so it keeps running after
+        # the step exits -- the job's later "Wait for Simulator" step is the
+        # actual synchronization point (see that step for why it uses
+        # `bootstatus -b`, not a `simctl list | grep Booted` poll).
         run: |
-          UDID=$(xcrun xctrace list devices | grep "^iPhone" | awk '{gsub(/[()]/,""); print $NF}' | head -n 1)
-          echo $UDID
-          xcrun simctl boot "${UDID:?No Simulator with this name found}"
-      - name: Wait for Simulator to be Ready
-        run: |
-            COUNT=0
-            MAX_RETRIES=12  # Wait for a maximum of 12 * 5 = 60 seconds
-            until xcrun simctl list devices | grep -q "Booted"; do
-              if [ $COUNT -ge $MAX_RETRIES ]; then
-                echo "Simulator did not boot within the expected time."
-                exit 1
-              fi
-              echo "Waiting for simulator to boot... Attempt: $((COUNT+1))"
-              sleep 20
-              COUNT=$((COUNT+1))
-            done
-            echo "Simulator is ready."
+          SIM_JSON="$(xcrun simctl list devices available --json)"
+          RUNTIME_KEY="$(echo "$SIM_JSON" | jq -r '.devices | to_entries[] | select(.key|test("SimRuntime.iOS")) | select([.value[]|select(.name|startswith("iPhone"))]|length>0) | .key' | head -n 1)"
+          UDID="$(echo "$SIM_JSON" | jq -r --arg rt "$RUNTIME_KEY" '.devices[$rt][] | select(.name|startswith("iPhone")) | .udid' | head -n 1)"
+          OS_VER="$(echo "$RUNTIME_KEY" | sed -E 's/.*SimRuntime\.iOS-([0-9]+)-([0-9]+).*/\1.\2/')"
+          : "${UDID:?No available iPhone simulator found}"
+          : "${OS_VER:?Could not parse simulator OS version}"
+          echo "Booting UDID=$UDID on iOS $OS_VER (runtime $RUNTIME_KEY) in the background"
+          nohup xcrun simctl boot "$UDID" > "$RUNNER_TEMP/simctl-boot.log" 2>&1 &
+          disown
+          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          echo "SIMULATOR_OS=$OS_VER" >> "$GITHUB_ENV"
       - name: Run flutter precache
         run: flutter precache -v
-      - name: Run flutter doctor
-        run: flutter doctor -v
-      - name: Integration Tests
-        run: melos run integration_test:ios
-      - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+      - name: Activate Patrol CLI (patrol_cli_plus)
+        # patrol_cli_plus >= 5.4.1 defaults xcodebuild -destination-timeout to 30s,
+        # fixing the exit-70 device-resolution race on the slow macos-26 simulator.
+        run: dart pub global activate patrol_cli_plus
+      - name: Wait for Simulator to be Ready
+        # `xcrun simctl boot` (kicked off above, in the background) only
+        # *initiates* the boot and returns almost immediately; `simctl list
+        # devices` can report "Booted" before CoreSimulatorService has
+        # actually finished registering the device with Xcode's destination
+        # resolver. patrol_cli_plus's `test-without-building` invocation
+        # targets the simulator by exact UDID (`-destination id=<udid>`,
+        # unambiguous, no `--ios`/OS-string matching involved for simulators
+        # as of patrol_cli_plus 5.2.0) but pairs it with a hardcoded
+        # `-destination-timeout 1` (one second) on older releases. On PR
+        # #344's first macos-26 canary run (job 85040957868), a
+        # boot-then-poll-for-"Booted" pattern lost that race: xcodebuild
+        # reported "Unable to find a device matching the provided destination
+        # specifier" for the exact same booted UDID (exit 70, before any test
+        # ran) -- a CoreSimulatorService registration race, not a
+        # destination-string mismatch. `simctl bootstatus <udid> -b` is
+        # Apple's CI-safe boot primitive: it boots the device if it isn't
+        # already booting/booted, and blocks until CoreSimulatorService
+        # reports it has *actually* finished booting, closing this race at
+        # the source. Calling it here (after the background kick-off above)
+        # is idempotent: if the device is already booted it returns
+        # immediately, and if it's still booting it waits the remainder.
+        run: |
+          xcrun simctl bootstatus "${SIMULATOR_UDID:?Simulator UDID was not exported}" -b
+          echo "Simulator is ready."
+      - name: Start iOS diagnostics
+        # patrol forwards none of the app's Dart print/logging output on iOS,
+        # even with --verbose (the other jobs all show it), so a conformance
+        # module that fails here had only its failure line to go on (#469).
+        #
+        # Cheap by default, because the host is the thing under suspicion: a
+        # 3s ps/vm_stat sampler (host-load.log) and nothing else while the
+        # tests run. The app's "flutter: " lines and runningboardd's WebKit
+        # launch lines are read back from the simulator's persisted unified
+        # log AFTER the tests ("Collect iOS diagnostics"), which adds no load
+        # during them. The debug-level live stream this replaces cost "log"
+        # plus diagnosticd 40-60% CPU on a host already at load 200-500 (run
+        # 37430662455).
+        #
+        # IOS_HEAVY_DIAGNOSTICS (workflow_dispatch input) brings back live
+        # streams of the app, SafariViewService and SpringBoard/backboardd/
+        # runningboardd, plus a continuous screen recording. That recording
+        # ruled out a dialog: during a 45s stall it showed the browser sheet
+        # with a blank page and no alert.
+        run: |
+          D="$RUNNER_TEMP/simlog"
+          mkdir -p "$D"
+          : > "$D/pids"
+          touch "$D/tests-start"
+          nohup bash -c '
+            while true; do
+              echo "=== $(date -u +%H:%M:%S)"
+              sysctl -n vm.loadavg
+              # ps, not top: top -l costs about a CPU-second per sample on a
+              # 3-vCPU runner, enough to perturb what it measures.
+              ps -Ao pcpu,rss,comm -r | head -8
+              echo "-- top RSS"
+              ps -Ao rss,pcpu,comm -m | head -8
+              vm_stat | grep -E "Pages (free|active|wired|compressed)|Pageouts|Swapouts"
+              sleep 3
+            done
+          ' > "$D/host-load.log" 2>&1 &
+          echo $! >> "$D/pids"
+          if [ "$IOS_HEAVY_DIAGNOSTICS" = "true" ]; then
+            nohup xcrun simctl spawn "$SIMULATOR_UDID" log stream --style compact --level info \
+              --predicate 'process == "Runner" OR process == "SafariViewService" OR subsystem BEGINSWITH "com.apple.AuthenticationServices"' \
+              > "$D/simulator.log" 2>&1 &
+            echo $! >> "$D/pids"
+            nohup xcrun simctl spawn "$SIMULATOR_UDID" log stream --style compact --level info \
+              --predicate 'process == "SpringBoard" OR process == "backboardd" OR process == "runningboardd"' \
+              > "$D/system.log" 2>&1 &
+            echo $! >> "$D/pids"
+            # recordVideo needs SIGINT to finalise the mp4, so its pid is kept
+            # apart from the plain kill list.
+            nohup xcrun simctl io "$SIMULATOR_UDID" recordVideo --codec=h264 --force \
+              "$D/screen.mp4" > "$D/recordVideo.log" 2>&1 &
+            echo $! > "$D/video.pid"
+          fi
+      - name: Integration Tests (Patrol)
+        run: |
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          # Maps this job's shard label to the CONFORMANCE_SHARD tag set
+          # patrol_test/app_test.dart understands (a comma-separated set of
+          # its _knownShards tags) -- see the job comment above for the
+          # 2-way, time-balanced split and why it's 2 shards, not 4.
+          case "${{ matrix.shard }}" in
+            heavy) CONFORMANCE_SHARD_VALUE="hybrid,implicit" ;;
+            light) CONFORMANCE_SHARD_VALUE="basic,rest" ;;
+            *)
+              echo "::error::unknown matrix.shard '${{ matrix.shard }}' - expected heavy or light"
+              exit 1
+              ;;
+          esac
+          # Runs every patrol_test/*_test.dart (conformance + e2e + offline) on
+          # the iOS simulator and collects Dart coverage via the VM service.
+          # CONFORMANCE_SHARD (read by patrol_test/app_test.dart) restricts
+          # which of the 13 conformance plans this matrix leg registers; the 3
+          # offline-mode tests in patrol_test/offline_mode_test.dart are not
+          # sharded and run in every leg (they're fast and run no network
+          # conformance flow).
+          patrol_plus test \
+            --coverage \
+            --coverage-ignore="**/*.g.dart" \
+            --coverage-workspace \
+            -d "${SIMULATOR_UDID:?Simulator UDID was not exported}" \
+            --ios "${SIMULATOR_OS:?Simulator OS was not exported}" \
+            --verbose \
+            --dart-define=CI=true \
+            --dart-define=CONFORMANCE_SHARD="$CONFORMANCE_SHARD_VALUE" \
+            --dart-define=CONFORMANCE_FORCE_STALL_MODULE="${IOS_FORCE_STALL_MODULE:-}" \
+            --dart-define=OIDC_CONFORMANCE_TOKEN=${OIDC_CONFORMANCE_TOKEN}
+          cp coverage/patrol_lcov.info "coverage/ios-${{ matrix.shard }}-coverage.info"
+        working-directory: packages/oidc/example
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
+      - name: Collect iOS diagnostics
+        if: always()
+        run: |
+          D="$RUNNER_TEMP/simlog"
+          if [ "${{ job.status }}" != "success" ]; then
+            xcrun simctl io "$SIMULATOR_UDID" screenshot "$D/final.png" || true
+          fi
+          # `|| true` throughout: this shell runs with -e and pipefail, and
+          # video.pid only exists with heavy diagnostics on.
+          vpid="$(cat "$D/video.pid" 2>/dev/null || true)"
+          if [ -n "$vpid" ]; then
+            kill -INT "$vpid" 2>/dev/null || true
+            for _ in $(seq 1 60); do kill -0 "$vpid" 2>/dev/null || break; sleep 1; done
+          fi
+          if [ -f "$D/pids" ]; then
+            while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$D/pids"
+          fi
+          # Read the evidence back from the simulator's persisted unified log
+          # now that the tests are done. Both kinds of line are logged at
+          # default level, which the log store persists.
+          xcrun simctl spawn "$SIMULATOR_UDID" log show --style compact --last 2h \
+            --predicate 'process == "Runner" AND eventMessage CONTAINS "flutter: "' \
+            > "$D/runner.log" 2>&1 || true
+          xcrun simctl spawn "$SIMULATOR_UDID" log show --style compact --last 2h \
+            --predicate 'process == "runningboardd" AND eventMessage CONTAINS "com.apple.WebKit.WebContent"' \
+            > "$D/launches.log" 2>&1 || true
+          echo "Crash reports written during the tests:"
+          find "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports \
+            -newer "$D/tests-start" -type f 2>/dev/null \
+            | sed 's#.*/##' | sed -E 's/[-_][0-9].*//' | sort | uniq -c | sort -rn | head -20 || true
+          python3 "$GITHUB_WORKSPACE/.github/scripts/ios_ci_metrics.py" \
+            --runner-log "$D/runner.log" --launch-log "$D/launches.log" \
+            --host-load "$D/host-load.log" | tee "$D/metrics.txt" || true
+          # Conformance lines only, so the job log answers the common question
+          # without downloading the artifact.
+          grep -E 'flutter: .*(\[e2e\]|Suite verdict|Login flow threw)' \
+            "$D/runner.log" | cut -c1-400 || true
+          gzip -9 "$D"/*.log || true
+      # Per-shard name: this job is sharded 2 ways (see the job comment
+      # above), and actions/upload-artifact requires unique artifact names
+      # within one workflow run.
+      - name: Upload iOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          name: ios-integration-coverage
-          path: packages/oidc/example/coverage/ios-coverage.info
+          name: ios-${{ matrix.shard }}-diagnostics
+          path: |
+            ${{ runner.temp }}/simlog/*.log.gz
+            ${{ runner.temp }}/simlog/metrics.txt
+            ${{ runner.temp }}/simlog/final.png
+            ${{ runner.temp }}/simlog/screen.mp4
+          if-no-files-found: warn
+      # Diagnostics only: this used to run unconditionally on every job, ahead
+      # of the tests, costing ~148s (run 37346215172) for information that is
+      # only ever useful once something has already gone wrong. Moved after
+      # the test step and gated on failure so the normal path doesn't pay for
+      # it, now 2x per shard instead of once.
+      - name: Run flutter doctor
+        if: failure()
+        run: flutter doctor -v
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-${{ matrix.shard }}-integration-coverage
+          path: packages/oidc/example/coverage/ios-${{ matrix.shard }}-coverage.info
           include-hidden-files: true
           if-no-files-found: error
+
   web:
     strategy:
       fail-fast: false
       matrix:
         working-directory: ["packages/oidc/example"]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Root cause of past web-job flakiness (see #337): the OIDC redirect URI
+    # was hardcoded to localhost:22433 while this job never pinned --web-port,
+    # so Flutter's web server bound to a random port. The IdP's redirect could
+    # never land back on the app's own origin, so OidcWebCore's response
+    # Completer never resolved -- the conformance test just hung until
+    # Playwright's 10-minute per-test timeout killed it
+    # (Total:1/Successful:0/Failed:0, not an assertion failure). Fixed by
+    # pinning --web-port; confirmed green with conformance actually executing
+    # in run 28666114227 (web job: "OIDC Conformance Test" passed in 31s).
+    #
+    # The hardcoding itself is gone now. Matching two literals by hand was only
+    # ever a coincidence waiting to break, and it broke again the moment the
+    # origin had to move to satisfy OIDC Registration section 2. Both the app
+    # and the conformance harness now derive the redirect URI from the origin
+    # being served (packages/oidc/example/lib/web_redirect_uri.dart), so the
+    # flags below are the only place it is stated.
+    #
+    # `continue-on-error: true` used to sit here as a safety net for the live
+    # third-party IdP dependency, with a note that the job was "expected to be
+    # green now, not masked-red". It was masked-red. The workflow reported
+    # conclusion=success on 262bdfd, c34015a and 932fb6c while this job failed
+    # in every one of them, and Hybrid RP and Implicit RP had been failing on
+    # web since the day they were added -- for two runs not even failing, but
+    # vanishing from the tally entirely.
+    #
+    # A job that cannot fail the build cannot defend anything. The safety-net
+    # argument is real but it is served by the retries and timeouts inside the
+    # job, not by discarding its verdict.
+    # Patrol web runs through Playwright (patrol_cli activation + npx playwright
+    # install + the web build + the live conformance flow). The healthy run is
+    # ~25m30s, so 30 left no room: with --web-timeout 900000 per test and
+    # --web-workers 1, two tests hitting the cap exceed the job budget and the
+    # step is killed BEFORE the tally reconciler prints which tests vanished --
+    # losing exactly the diagnosis it exists to produce. 45 keeps the
+    # reconciler reachable in the case it was written for.
+    timeout-minutes: 45
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
-      # for reference: https://github.com/firebase/flutterfire/blob/d41e30a808b47458d7ebd402862bcd55d8563ccb/.github/workflows/e2e_tests.yaml#L281-L289
-      - name: Run Web Integration Tests
+      - name: Preload Flutter web artifacts
+        run: flutter precache --web
+      # Patrol drives web via Playwright (its own bundled Chromium over CDP),
+      # NOT flutter-drive/DWDS, so Flutter's DWDS startup race
+      # (flutter/flutter#181357) never applies. patrol_cli runs
+      # `npx playwright install` itself; ubuntu-latest ships Node/npx.
+      - name: Activate Patrol CLI (patrol_cli_plus)
+        # patrol_cli_plus >= 5.5.0 forwards --web-hostname and the
+        # --web-tls-cert-path/--web-tls-cert-key-path pair, and trusts the
+        # supplied certificate in its own Dart-side readiness probe
+        # (Bdaya-Dev/patrol#44). All three are needed to serve the RP at the
+        # conformant origin the step below builds; 5.4.1 has none of them.
+        run: dart pub global activate patrol_cli_plus
+      # ubuntu-latest is 24.04, which restricts unprivileged user namespaces via
+      # AppArmor; re-allow them so Playwright's Chromium sandbox can initialize.
+      # https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md
+      - name: Allow Chromium sandbox (unprivileged userns)
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+      # An OIDC relying party running the implicit or hybrid flow may not be
+      # served at http, and may not be served at localhost. OpenID Connect
+      # Dynamic Client Registration 1.0 section 2:
+      #
+      #   Web Clients using the OAuth Implicit Grant Type MUST only register
+      #   URLs using the https scheme as redirect_uris; they MUST NOT use
+      #   localhost as the hostname.
+      #
+      # Both clauses bind, and violating the first is what produced exactly 75
+      # provider-side rejections in one run (48 Hybrid + 27 Implicit):
+      #
+      #   redirect_uri is one of the registered uris but uses http scheme which
+      #   is not allowed when application_type is web and response type is not
+      #   code
+      #
+      # The suite only checks the scheme today, so https://localhost would turn
+      # the job green while still violating the second clause. It is not worth
+      # certifying against a check the suite forgot to write, so this serves the
+      # app at a real name instead.
+      #
+      # .test is reserved by RFC 6761 and is guaranteed never to resolve
+      # publicly, so this name cannot collide with a real host.
+      - name: Serve the RP at a conformant origin (hosts + TLS)
         working-directory: ${{ matrix.working-directory }}
         run: |
-          # first we run chromedriver on port 4444 and Xvfb
-          export DISPLAY=:99
-          chromedriver --port=4444 --trace-buffer-size=100000 &
-          sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 & # optional
+          set -euo pipefail
+          echo "127.0.0.1 rp.oidc.test" | sudo tee -a /etc/hosts
+          mkdir -p .ci/tls
+          # A self-signed leaf is enough: the only party that has to accept it
+          # is our own Playwright Chromium (below). The provider never connects
+          # to the RP -- the browser does the redirect.
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
+            -keyout .ci/tls/rp.key -out .ci/tls/rp.pem \
+            -subj "/CN=rp.oidc.test" \
+            -addext "subjectAltName=DNS:rp.oidc.test"
+          echo "--- serving origin: https://rp.oidc.test:22433 ---"
+          openssl x509 -in .ci/tls/rp.pem -noout -subject -ext subjectAltName
+      - name: Run Web Integration Tests (Patrol + Playwright)
+        working-directory: ${{ matrix.working-directory }}
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
+        run: |
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          # Patrol serves the Flutter web app and drives Chromium via Playwright
+          # (over CDP) -- no flutter drive, no DWDS, so the DWDS startup race
+          # cannot occur. patrol_cli_plus installs Playwright + its browser on
+          # first run. -d chrome selects the web target; --web-headless for CI.
+          # On web, --coverage collects V8/JS coverage via Playwright and emits
+          # an lcov into ./coverage. Only patrol_test/app_test.dart is targeted
+          # (the offline entrypoint imports dart:io, unavailable on web).
+          #
+          # --web-port 22433 pins the Flutter web server so the IdP's redirect
+          # lands back on this app's origin. See #337 for the full diagnosis of
+          # the hang this fixes. The redirect URI is no longer hardcoded to
+          # match: the app and the conformance harness both derive it from the
+          # origin actually being served (lib/web_redirect_uri.dart), so the
+          # port and hostname below are the single source of truth.
+          #
+          # --web-hostname + the TLS pair serve the RP at
+          # https://rp.oidc.test:22433, which is what OIDC Registration section
+          # 2 requires of a web client running the implicit or hybrid flow. See
+          # the origin step above for the full citation.
+          #
+          # --web-browser-args makes our own Chromium accept the self-signed
+          # cert from that step. It is scoped to this browser instance, which
+          # only ever loads the app under test and the provider's own https
+          # endpoints; nothing here weakens verification for anything else.
+          #
+          # --show-flutter-logs is load-bearing, not verbosity. patrol_log_plus
+          # DROPS every stdout line that does not contain 'PATROL_LOG' unless
+          # this flag is set (patrol_log_reader.dart:92-119), and on web the
+          # harness's own diagnostics -- the per-module '[e2e] <module> ->
+          # authResult ...' line, the 'Suite status for <module>' dump that
+          # exists precisely to say WHY a module returned no user, and the
+          # 'PLAN_ID' listing -- all travel that path (print -> console ->
+          # Playwright stdout). Without it a failing profile reports nothing
+          # whatsoever: run 90178636000 logged ZERO occurrences of '[e2e]',
+          # 'PLAN_ID' and 'Suite status', including for the 11 tests that
+          # PASSED. --verbose does NOT cover this; it only raises the CLI's own
+          # logger level.
+          #
+          # --web-timeout states Playwright's per-test cap instead of inheriting
+          # it. 600000ms is playwright.config.ts:66's own default, pinned here
+          # because test/conformance_flow_timeout_test.dart asserts the
+          # conformance flow timeouts fit inside it (48 hybrid modules x 10s +
+          # setup < 600s). Inheriting a number a pub package can change would
+          # let that arithmetic silently stop holding.
+          set +e
+          patrol_plus test \
+            --target patrol_test/app_test.dart \
+            --web-port 22433 \
+            --web-hostname rp.oidc.test \
+            --web-tls-cert-path "$PWD/.ci/tls/rp.pem" \
+            --web-tls-cert-key-path "$PWD/.ci/tls/rp.key" \
+            --web-browser-args '["--ignore-certificate-errors"]' \
+            --coverage \
+            --coverage-ignore="**/*.g.dart" \
+            --coverage-package oidc \
+            -d chrome \
+            --web-headless true \
+            --web-workers 1 \
+            --web-timeout 900000 \
+            --show-flutter-logs \
+            --verbose \
+            --dart-define=CI=true \
+            --dart-define=OIDC_CONFORMANCE_TOKEN=$OIDC_CONFORMANCE_TOKEN \
+            2>&1 | tee patrol-web.log
+          PATROL_RC=${PIPESTATUS[0]}
+          set -e
+          echo "patrol exit status: $PATROL_RC"
 
-          # then we start flutter drive
-          flutter drive --driver=./test_driver/integration_test.dart --target=./integration_test/app_test.dart -d chrome --dart-define=CI=true | tee output.log
-          # We have to check the output for failed tests matching the string "[E]"
-          output=$(<output.log)
-          if [[ "$output" =~ \[E\] ]]; then
-          # You will see "All tests passed." in the logs even when tests failed.
-          echo "All tests did not pass. Please check the logs for more information."
-          exit 1
+          # Best-effort: web V8->lcov path differs from native; don't fail the
+          # job if the file isn't produced.
+          cp coverage/patrol_lcov.info coverage/web-coverage.info || \
+            echo "No web lcov produced (V8 coverage may be unavailable)."
+
+          # A test that starts and never reports is counted in patrol's `Total`
+          # and in NONE of successful/failed/skipped, because an unclosed entry
+          # keeps `start` status and no counter matches it
+          # (patrol_single_test_entry.dart:33). That is how this job printed
+          # "Total: 13, Successful: 11, Failed: 0, Skipped: 0" and exited 1
+          # without naming either lost profile, and why the terminal message was
+          # the misleading "Playwright process exited unexpectedly with code 1"
+          # rather than "Some tests failed." (web_test_backend.dart:649-654
+          # keys on failedTestsCount > 0).
+          #
+          # Nothing in patrol asserts successful + failed + skipped == total.
+          # Do it here, over patrol's own output, so a vanished test is a NAMED
+          # failure. The floor depends on which path the harness took:
+          #   * token present  -> 13: patrol_test/app_test.dart declares 13
+          #     conformance tests, and patrol reports a run that executed
+          #     nothing as a clean pass.
+          #   * token absent   -> 1: the harness runs its smoke path ("Running
+          #     smoke test path (no OIDC token supplied)"). This is the only
+          #     path a dependabot-triggered run can take: dependabot PRs get a
+          #     separate secret store ("Secret source: Dependabot") that does
+          #     not contain OIDC_CONFORMANCE_TOKEN, so demanding 13 made every
+          #     dependabot PR structurally red here. The floor stays POSITIVE
+          #     (never 0): a smoke run that executed nothing still fails.
+          if [ -n "$OIDC_CONFORMANCE_TOKEN" ]; then
+            MIN_TESTS=13
+          else
+            MIN_TESTS=1
+            echo "::notice::OIDC_CONFORMANCE_TOKEN is not available in this trigger context (e.g. a dependabot PR). Live conformance did not run; the harness ran its smoke path and the tally floor is $MIN_TESTS."
           fi
+          set +e
+          dart run tool/patrol_tally.dart patrol-web.log --minimum-tests "$MIN_TESTS"
+          TALLY_RC=$?
+          set -e
+
+          # Deferred so the tally always runs and always names what it found.
+          if [ "$PATROL_RC" -ne 0 ]; then
+            echo "::error::patrol reported failure (exit $PATROL_RC); see the test output above."
+            exit "$PATROL_RC"
+          fi
+          exit "$TALLY_RC"
         shell: bash
 
-      # web has no test coverage for now
-      # - name: Upload Coverage Report
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: web-coverage
-      #     path: packages/oidc/example/coverage/web-coverage.info
+      # if: always() -- these exist to explain a FAILED run, so the step that
+      # uploads them must survive the failure. Without it the job went straight
+      # from "##[error]Process completed with exit code 1" to "Post job
+      # cleanup", and Playwright's own HTML report -- the one artifact that
+      # names the tests it killed on timeout, which patrol's summary cannot --
+      # died with the runner.
+      - name: Upload Web Test Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-test-diagnostics
+          path: |
+            packages/oidc/example/patrol-web.log
+            packages/oidc/example/playwright-report
+            packages/oidc/example/test-results
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-integration-coverage
+          path: packages/oidc/example/coverage/web-coverage.info
+          include-hidden-files: true
+          # The artifact is absent whenever the run failed before coverage was
+          # written, which is a normal outcome of a failing conformance run --
+          # the job's verdict already carries that. Warn rather than add a
+          # second failure for the same cause.
+          if-no-files-found: warn
 
   macos:
-    runs-on: macos-13
+    runs-on: macos-latest
+    timeout-minutes: 60
+    # Deliberately NOT sharded, unlike android/ios/linux/windows -- two
+    # reasons, both confirmed live rather than assumed:
+    #
+    # 1. It's already fast. Baseline run 37346215172: macos finished in
+    #    7m51s (17:08:52 -> 17:16:43), far below ios's ~29min for the same 13
+    #    plans. Most of the plans that make ios slow are either quick here or
+    #    (per integration_test/shared_e2e.dart's skip logic) not runnable on
+    #    macOS at all -- e.g. the 4 logout plans skip because macOS's
+    #    com.bdayadev.oidc.example:/oauth2redirect custom scheme has no
+    #    authority for GenerateSessionState to build an origin from, and the
+    #    3 form-post plans skip because macOS can't receive an HTTP POST.
+    #    Sharding has nothing worth parallelizing here.
+    # 2. It would actively hurt. This job and `ios` are the only two
+    #    consumers, in this workflow, of GitHub's *concurrent macOS jobs*
+    #    pool, which is capped at 5 on Free/Pro/Team regardless of the much
+    #    larger general concurrent-job limit (see
+    #    https://docs.github.com/en/actions/reference/limits, "Usage
+    #    limits"). An earlier version of this job sharded 4 ways, which
+    #    together with ios's own 4 shards asked for 8 concurrent macOS-pool
+    #    slots at once. Measured live on run 37398194429: ios shards started
+    #    at 01:15:08 / 01:18:23 / 01:29:43 / 01:39:46 and the run didn't
+    #    finish until 01:57:49 -- 42 minutes end-to-end, WORSE than the
+    #    unsharded baseline, because most shards queued behind the cap
+    #    instead of running in parallel. Leaving this job as the single
+    #    consumer it always was, plus ios's reduced 2-way split (see that
+    #    job's comment), brings this workflow's own macOS-pool demand down
+    #    to 3 -- comfortably under 5.
     defaults:
       run:
         working-directory: packages/oidc/example
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
       - name: Run flutter precache
         run: flutter precache -v
       - name: Integration Tests
-        run: melos run integration_test:macos
+        working-directory: packages/oidc/example
+        run: |
+          # Work around flaky desktop integration test runs when executing
+          # multiple test entrypoints in a single `flutter test integration_test`.
+          flutter test integration_test/app_test.dart \
+            --coverage --branch-coverage --coverage-package "^(oidc|jose_plus|x509_plus|crypto_keys_plus)" \
+            -d macos --coverage-path coverage/macos-app-coverage.info \
+            --dart-define=CI=true --dart-define=OIDC_CONFORMANCE_TOKEN=${{env.OIDC_CONFORMANCE_TOKEN}} \
+            -r expanded
+
+          flutter test integration_test/offline_mode_test.dart \
+            --coverage --branch-coverage --coverage-package "^(oidc|jose_plus|x509_plus|crypto_keys_plus)" \
+            -d macos --coverage-path coverage/macos-offline-coverage.info \
+            --dart-define=CI=true --dart-define=OIDC_CONFORMANCE_TOKEN=${{env.OIDC_CONFORMANCE_TOKEN}} \
+            -r expanded
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-integration-coverage
-          path: packages/oidc/example/coverage/macos-coverage.info
+          path: packages/oidc/example/coverage/macos-*-coverage.info
           include-hidden-files: true
           if-no-files-found: error
   linux:
     runs-on: ubuntu-latest
+    # Sharded 4 ways like android (see that job's comment on why 4, not the
+    # 2 ios uses): setup here is cheap (apt packages + flutter precache, no
+    # emulator/simulator), so the 13 conformance plans running in parallel
+    # matrix legs instead of one sequential job is close to a pure wall-time
+    # win, with no macOS-pool-style concurrency budget to conserve.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [basic, implicit, hybrid, rest]
+    # container:
+    #   image: selenium/standalone-chrome:latest
+    #   options: --user root
     defaults:
       run:
         working-directory: packages/oidc/example
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-1-dev libgtk-3-dev libx11-dev pkg-config cmake ninja-build libblkid-dev liblzma-dev
+          sudo apt-get install -y xvfb libsecret-1-dev libgtk-3-dev libx11-dev pkg-config cmake ninja-build libblkid-dev liblzma-dev xdg-utils libvulkan1 fonts-liberation libatspi2.0-dev xdotool
+        shell: bash
       - name: Run flutter precache
         run: flutter precache -v
-      - name: Integration Tests
-        run: melos run integration_test:linux
+      - name: Activate Patrol CLI (patrol_cli_plus)
+        run: dart pub global activate patrol_cli_plus
+      - name: Integration Tests (Patrol)
+        working-directory: packages/oidc/example
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
+        run: |
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          if [ -z "$OIDC_CONFORMANCE_TOKEN" ]; then
+            echo "OIDC_CONFORMANCE_TOKEN is not set or is empty"
+          else
+            echo "OIDC_CONFORMANCE_TOKEN is set (value is masked for security)"
+          fi
+          google-chrome --version
+          chmod +x .ci/scripts/set_default_linux_apps.sh
+          ./.ci/scripts/set_default_linux_apps.sh
+          # patrol_cli_plus drives the Linux desktop backend (via AT-SPI2 /
+          # xdotool, installed above). A single invocation runs every
+          # patrol_test/*_test.dart (conformance + e2e + offline) and collects
+          # Dart coverage via the VM service.
+          # --verbose because patrol forwards NO test stdout to the job log by
+          # default: a failing test reports only "1 test(s) failed", with the
+          # reason, the module name, and even plain print() output all dropped.
+          # The ios job already runs verbose for the same reason.
+          xvfb-run --auto-servernum patrol_plus test \
+            --coverage \
+            --coverage-ignore="**/*.g.dart" \
+            --coverage-workspace \
+            -d linux \
+            --verbose \
+            --dart-define=CI=true \
+            --dart-define=CONFORMANCE_SHARD=${{ matrix.shard }} \
+            --dart-define=OIDC_CONFORMANCE_TOKEN=$OIDC_CONFORMANCE_TOKEN
+          cp coverage/patrol_lcov.info "coverage/linux-${{ matrix.shard }}-coverage.info"
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: linux-integration-coverage
-          path: packages/oidc/example/coverage/linux-coverage.info
+          name: linux-${{ matrix.shard }}-integration-coverage
+          path: packages/oidc/example/coverage/linux-${{ matrix.shard }}-coverage.info
           include-hidden-files: true
-          if-no-files-found: error          
+          if-no-files-found: error
+      - name: Upload Conformance Logs
+        uses: actions/upload-artifact@v7
+        with:
+          name: oidc-client-logs-${{ matrix.shard }}
+          path: packages/oidc/example/client-logs/final.zip
+          include-hidden-files: true
+          if-no-files-found: warn
   windows:
     runs-on: windows-latest
+    # Sharded like linux (see that job's comment): cheap setup, so splitting
+    # the 13 conformance plans into parallel matrix legs is close to a pure
+    # wall-time win.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [basic, implicit, hybrid, rest]
     defaults:
       run:
         working-directory: packages/oidc/example
     steps:
-      
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
       - name: Run flutter precache
         run: flutter precache -v
-      - name: Integration Tests
-        run: dart pub global run melos run integration_test:windows
+      - name: Activate Patrol CLI (patrol_cli_plus)
+        run: dart pub global activate patrol_cli_plus
+      - name: Integration Tests (Patrol)
+        working-directory: packages/oidc/example
+        run: |
+          export PATH="$PATH:$HOME/AppData/Local/Pub/Cache/bin:$HOME/.pub-cache/bin"
+          # patrol_cli_plus drives the Windows desktop backend. A single
+          # invocation runs every patrol_test/*_test.dart (conformance + e2e +
+          # offline) and collects Dart coverage via the VM service.
+          #
+          # `dart pub global activate` on Windows installs `patrol_plus.bat`
+          # (a cmd shim), NOT an extensionless shell script. git-bash does NOT
+          # honor PATHEXT, so bare `patrol_plus` is "command not found" (exit
+          # 127) even with the pub-cache bin on PATH. Invoke the .bat by its
+          # full name — git-bash resolves it on PATH and execs it via cmd.
+          # --verbose to match ios/web/linux: without it patrol drops all test
+          # stdout, so windows reports "Results: 4 passed" with no "[e2e]" line
+          # and its conformance login count is unobservable.
+          patrol_plus.bat test \
+            --coverage \
+            --coverage-ignore="**/*.g.dart" \
+            --coverage-workspace \
+            -d windows \
+            --verbose \
+            --dart-define=CI=true \
+            --dart-define=CONFORMANCE_SHARD=${{ matrix.shard }} \
+            --dart-define=OIDC_CONFORMANCE_TOKEN=${{ env.OIDC_CONFORMANCE_TOKEN }}
+          cp coverage/patrol_lcov.info "coverage/windows-${{ matrix.shard }}-coverage.info"
+        env:
+          OIDC_CONFORMANCE_TOKEN: ${{ secrets.OIDC_CONFORMANCE_TOKEN }}
         shell: bash
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: windows-integration-coverage
-          path: packages/oidc/example/coverage/windows-coverage.info
+          name: windows-${{ matrix.shard }}-integration-coverage
+          path: packages/oidc/example/coverage/windows-${{ matrix.shard }}-coverage.info
           include-hidden-files: true
-          if-no-files-found: error     
-      
+          if-no-files-found: error
+
   upload-coverage:
     runs-on: ubuntu-latest
-    needs: [unit_tests, android, ios, macos, linux, windows]
+    # `web` no longer carries continue-on-error, so a web FAILURE now skips
+    # this job rather than letting it run with a missing artifact. That is the
+    # intended trade: a run whose conformance job failed is red already, and a
+    # coverage upload from it would be partial anyway.
+    #
+    # `needs:` replaces the old single `unit_tests` job with every job the
+    # 2026 unit-test split introduced (see that block's header comment).
+    # unit_jose_chrome/unit_jose_firefox/unit_webcore_coverage skip entirely
+    # on PRs (job-level `if:`), and GitHub's default needs-cascade would
+    # therefore skip THIS job on every PR run too -- exactly the behavior
+    # change this `if:` exists to prevent. It requires every job to have
+    # actually succeeded, except those three, which may legitimately be
+    # 'skipped'; `always()` is required for the `if:` to even evaluate once
+    # any dependency is skipped rather than succeeded.
+    needs:
+      [
+        unit_core,
+        unit_chrome,
+        unit_firefox,
+        unit_jose_chrome,
+        unit_jose_firefox,
+        unit_webcore_coverage,
+        unit_oidc_web_chrome,
+        unit_flutter,
+        unit_tests_coverage,
+        android,
+        ios,
+        web,
+        macos,
+        linux,
+        windows,
+      ]
+    if: |
+      always() &&
+      needs.unit_core.result == 'success' &&
+      needs.unit_chrome.result == 'success' &&
+      needs.unit_firefox.result == 'success' &&
+      (needs.unit_jose_chrome.result == 'success' || needs.unit_jose_chrome.result == 'skipped') &&
+      (needs.unit_jose_firefox.result == 'success' || needs.unit_jose_firefox.result == 'skipped') &&
+      (needs.unit_webcore_coverage.result == 'success' || needs.unit_webcore_coverage.result == 'skipped') &&
+      needs.unit_oidc_web_chrome.result == 'success' &&
+      needs.unit_flutter.result == 'success' &&
+      needs.unit_tests_coverage.result == 'success' &&
+      needs.android.result == 'success' &&
+      needs.ios.result == 'success' &&
+      needs.web.result == 'success' &&
+      needs.macos.result == 'success' &&
+      needs.linux.result == 'success' &&
+      needs.windows.result == 'success'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Environment
         uses: ./.github/actions/integration_test_base
       - name: Download unit test coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: package-coverage
           path: coverage/downloaded/
@@ -316,12 +1836,63 @@ jobs:
           rm -rf coverage/downloaded
           ls -lR coverage
       - name: Download integration coverages
-        uses: actions/download-artifact@v4
-        with:          
+        uses: actions/download-artifact@v8
+        with:
           path: packages/oidc/example/coverage/
-          pattern: '*-integration-coverage'
+          pattern: "*-integration-coverage"
           merge-multiple: true
-      
+
+      - name: Normalize macOS-absolute SF paths
+        env:
+          REPO_PATH: ${{ github.workspace }}
+        # The ios and macos jobs run on macOS runners, so their lcov files
+        # carry SF: paths under /Users/runner/work/oidc/oidc/... while this
+        # job's combine_coverage strips the LINUX workspace prefix
+        # ($REPO_PATH = /home/runner/work/oidc/oidc). Unrewritten, those
+        # entries (106 of them on run 28821969853) stay absolute in
+        # final-coverage and Codecov cannot map them to repo files. Rewrite
+        # the macOS prefix to this job's workspace prefix so the combine
+        # relativizes every record uniformly.
+        run: |
+          set -e
+          find packages/oidc/example/coverage -type f -name "*.info"             -exec sed -i "s|^SF:/Users/runner/work/oidc/oidc/|SF:$REPO_PATH/|" {} +
+          # `|| true` inside the substitution: in the healthy zero-remaining
+          # case grep exits 1 (no matching lines), and under this workflow's
+          # pipefail+errexit shell that would fail the step; awk's stdout
+          # ("0") is captured either way.
+          remaining=$(grep -rhc '^SF:/Users/' packages/oidc/example/coverage --include='*.info' | awk '{s+=$1} END {print s+0}' || true)
+          echo "macOS-absolute SF entries remaining after normalization: $remaining"
+      # A platform that stops running tests emits an empty lcov, and nothing else
+      # catches that: `if-no-files-found: error` only asserts the file exists, and
+      # codecov.yml disables every status (`patch: false`, `project: false`). The
+      # sibling guard below covers unit_tests' packages but not these.
+      #
+      # An empty lcov is not a coverage regression, it is proof the platform ran
+      # nothing, so fail and name it.
+      - name: "[Coverage] Assert every integration coverage is non-empty"
+        run: |
+          missing=0
+          found=0
+          for f in packages/oidc/example/coverage/*-coverage.info; do
+            [ -e "$f" ] || continue
+            found=$((found + 1))
+            bytes=$(wc -c < "$f")
+            sf=$(grep -c '^SF:' "$f" || true)
+            sf=${sf:-0}
+            echo "guard: $(basename "$f") -> ${bytes} bytes, ${sf} SF record(s)"
+            if [ "$sf" -eq 0 ]; then
+              echo "::error::$(basename "$f") has zero source records - that platform executed no tests."
+              missing=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no *-coverage.info found at all - every integration job failed to produce coverage"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "guard: all ${found} integration coverage file(s) carry real source records"
       - name: Combine Coverage Results
         env:
           REPO_PATH: ${{ github.workspace }}
@@ -330,16 +1901,26 @@ jobs:
           find . -type f -name "*-coverage.info"
           dart pub global activate combine_coverage
           dart pub global run combine_coverage --repo-path="$REPO_PATH"
+      - name: Strip generated files from combined coverage
+        # Parity with the unit pipeline's coverage:combine: without this the
+        # final-coverage artifact and the Codecov upload include *.g.dart and
+        # the generated oidc_cli version.dart from integration runs.
+        run: |
+          set -e
+          dart pub global activate remove_from_coverage
+          dart pub global run remove_from_coverage:remove_from_coverage \
+            -f coverage/lcov.info \
+            -r '\.g\.dart$' -r 'oidc_cli/lib/src/version\.dart$'
       # Upload
       - name: Upload the final coverage as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: final-coverage
           path: coverage/lcov.info
       - name: Report to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          file: coverage/lcov.info
+          files: coverage/lcov.info          
           fail_ci_if_error: false

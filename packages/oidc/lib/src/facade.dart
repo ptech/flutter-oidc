@@ -5,17 +5,22 @@ import 'package:oidc_platform_interface/oidc_platform_interface.dart';
 class OidcFlutter {
   static OidcPlatform get _platform => OidcPlatform.instance;
 
+  /// A stream of native browser-layer observability events
+  /// (`OidcNativeBrowserEvent` subtypes). Surfaced through
+  /// `OidcUserManager.events()`; empty on web/desktop.
+  static Stream<OidcNativeBrowserEvent> nativeBrowserEvents() =>
+      _platform.nativeBrowserEvents();
+
   /// Returns a stream that creates a hidden iframe every time you listen to it.
   ///
   /// The hidden iframe starts listening to session status if it's supported.
   static Stream<OidcMonitorSessionResult> monitorSessionStatus({
     required Uri checkSessionIframe,
     required OidcMonitorSessionStatusRequest request,
-  }) =>
-      _platform.monitorSessionStatus(
-        checkSessionIframe: checkSessionIframe,
-        request: request,
-      );
+  }) => _platform.monitorSessionStatus(
+    checkSessionIframe: checkSessionIframe,
+    request: request,
+  );
 
   /// Prepares the platform to handle a redirect flow.
   static Map<String, dynamic> prepareForRedirectFlow(
@@ -38,7 +43,7 @@ class OidcFlutter {
     Map<String, dynamic> preparationResult = const {},
   }) async {
     try {
-      return _platform.getAuthorizationResponse(
+      return await _platform.getAuthorizationResponse(
         metadata,
         request,
         options,
@@ -65,12 +70,14 @@ class OidcFlutter {
     OidcPlatformSpecificOptions options = const OidcPlatformSpecificOptions(),
   }) async {
     try {
-      return _platform.getEndSessionResponse(
+      return await _platform.getEndSessionResponse(
         metadata,
         request,
         options,
         preparationResult,
       );
+    } on OidcException {
+      rethrow;
     } catch (e, st) {
       throw OidcException(
         'Failed to end user session',
@@ -87,7 +94,7 @@ class OidcFlutter {
   ///
   /// on windows/linux/macosx this starts a server on the same prt
   static Stream<OidcFrontChannelLogoutIncomingRequest>
-      listenToFrontChannelLogoutRequests({
+  listenToFrontChannelLogoutRequests({
     required Uri listenTo,
     OidcFrontChannelRequestListeningOptions options =
         const OidcFrontChannelRequestListeningOptions(),

@@ -1,3 +1,107 @@
+## 1.2.2
+
+ - **FIX**(oidc_web_core): compare the session iframe's window by JS identity. ([1dc7598f](https://github.com/Bdaya-Dev/oidc/commit/1dc7598fa5eb74d015d2a0e8dfe7f673711ba41e))
+
+## 1.2.1
+
+ - **FIX**(oidc_web_core): require event.source to match a monitor's own iframe ([#474](https://github.com/Bdaya-Dev/oidc/issues/474)). ([b4346936](https://github.com/Bdaya-Dev/oidc/commit/b4346936cc6df00a6902c471cb8a6eaaf722180e))
+ - **FIX**(oidc_web_core): each session monitor owns its own iframe ([#474](https://github.com/Bdaya-Dev/oidc/issues/474)). ([4771e740](https://github.com/Bdaya-Dev/oidc/commit/4771e74092858963581a7d571a6d9a2075a6bb73))
+
+## 1.2.0
+
+ - **FIX**(oidc_web_core): say what the auth window did when a flow times out. ([63532065](https://github.com/Bdaya-Dev/oidc/commit/635320654250d2338fde2cade4ea93b88f7fbb5a))
+ - **FIX**(example): web loses Hybrid/Implicit to a timeout budget, not a fragment bug. ([624a502e](https://github.com/Bdaya-Dev/oidc/commit/624a502e04ceae7ac26ec05f3d523fe1a870bd7a))
+ - **FIX**(oidc_web_core): surface the flow timeout as OidcException, not TimeoutException. ([be6a5316](https://github.com/Bdaya-Dev/oidc/commit/be6a5316df6cc83ee90807c4f88f4d37d5cd144d))
+ - **FEAT**(oidc_core,oidc_web_core): bound the interactive web flow with flowTimeoutSeconds. ([7282efa0](https://github.com/Bdaya-Dev/oidc/commit/7282efa09d406fa3eb012688fbbc091836d8ba2e))
+
+## 1.1.1
+
+ - Update a dependency to the latest release.
+
+## 1.1.0
+
+ - **FIX**(oidc_core): protect the PKCE code_verifier at rest ([#324](https://github.com/Bdaya-Dev/oidc/issues/324) item 20) ([#402](https://github.com/Bdaya-Dev/oidc/issues/402)). ([32f4cbb3](https://github.com/Bdaya-Dev/oidc/commit/32f4cbb341e154d12ae687c6b2a8b23565779a20))
+ - **FEAT**(oidc_web_core): status-driven redirect.html + app-ack wire ([#116](https://github.com/Bdaya-Dev/oidc/issues/116), [#227](https://github.com/Bdaya-Dev/oidc/issues/227), [#256](https://github.com/Bdaya-Dev/oidc/issues/256)) ([#397](https://github.com/Bdaya-Dev/oidc/issues/397)). ([3ea11929](https://github.com/Bdaya-Dev/oidc/commit/3ea119290f1007d62b9ecb8ffcaeb3a771f7df9f))
+
+## 1.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**(oidc_web_core): stop the samePage end-session test from navigating the suite away ([#382](https://github.com/Bdaya-Dev/oidc/issues/382)). ([d1cd114e](https://github.com/Bdaya-Dev/oidc/commit/d1cd114e4ec505a5ace75fd28512ff16ff1f474e))
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(oidc_web_core): secureTokens silently persisted as plaintext on Firefox ([#360](https://github.com/Bdaya-Dev/oidc/issues/360)). ([656025d8](https://github.com/Bdaya-Dev/oidc/commit/656025d8175c1c4e27c827622e0433be336dd245))
+ - **FIX**(oidc_core): close 7 P0 spec-audit findings ([#324](https://github.com/Bdaya-Dev/oidc/issues/324)). ([60907e96](https://github.com/Bdaya-Dev/oidc/commit/60907e96f33dce8bf961b26ed43cec20f56e595e))
+ - **FIX**(oidc_web_core): avoid COOP closed-window false positives. ([5b24209b](https://github.com/Bdaya-Dev/oidc/commit/5b24209bafc99d21f3d6f85e320e0a110feebe43))
+ - **FIX**(oidc_web_core): detect closed auth window ([#303](https://github.com/Bdaya-Dev/oidc/issues/303)). ([36f7a340](https://github.com/Bdaya-Dev/oidc/commit/36f7a34010fe1e8d62834592cd1084f4c4e5e0e9))
+ - **FEAT**(oidc_web_core): encrypt secureTokens at rest (AES-GCM via WebCrypto) ([#324](https://github.com/Bdaya-Dev/oidc/issues/324) item 15). ([cf504300](https://github.com/Bdaya-Dev/oidc/commit/cf504300b1922a7f68a82c39ab8dfb42aafe487d))
+ - **BREAKING** **REFACTOR**: remove rxdart; adopt bdaya_shared_value ^5.0.0. ([0d65d7fd](https://github.com/Bdaya-Dev/oidc/commit/0d65d7fde062e2db7ffbdd31a47735c59954045a))
+
+## 0.5.0
+
+- **FEAT**: encrypt the `secureTokens` namespace (access/refresh/id tokens,
+  the OIDC nonce) at rest in `OidcWebStore`. AES-GCM via WebCrypto, with a
+  non-extractable 256-bit key persisted (as a structured-clone `CryptoKey`
+  object, never its raw bytes) in IndexedDB and a fresh random IV per write.
+  Values are stored as a versioned `oidcenc.v1.<iv>.<ciphertext>` envelope.
+  This is **defense-in-depth against disk/backup scraping and casual
+  inspection -- it is NOT protection against XSS**: same-origin script can
+  still call `crypto.subtle.decrypt` or simply read decrypted tokens back
+  out through the `OidcStore` API. Harden against XSS itself (CSP, trusted
+  types, dependency hygiene) and prefer a BFF for high-value applications.
+  (audit #324 item 15)
+  - No new required settings: `const OidcWebStore()` still works, and
+    encryption is on by default (`OidcWebStoreEncryption.preferred`).
+  - Values written before this feature (or written by the `preferred`
+    fallback) are read through transparently and re-encrypted on next write
+    -- no forced re-login. This migration is **forward-only**: downgrading
+    to a version predating this feature will see encrypted values as opaque
+    strings.
+  - If WebCrypto/IndexedDB are unavailable (a non-secure-context origin, or
+    IndexedDB disabled/ephemeral in some private-browsing modes), the
+    default `preferred` mode falls back to the previous plaintext behavior
+    with a one-shot warning; pass `encryption: OidcWebStoreEncryption.required`
+    to throw an `OidcException` instead of ever writing plaintext.
+  - No new dependencies: WebCrypto and IndexedDB are both already exposed by
+    `package:web`.
+
+## 0.4.0+3
+
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+
+## 0.4.0+2
+
+ - Update a dependency to the latest release.
+
+## 0.4.0+1
+
+ - **FIX**(oidc_web_core): use isA() for JS interop checks. ([724c9a2a](https://github.com/Bdaya-Dev/oidc/commit/724c9a2a0ce9792653c58d17ec5f4122750278f3))
+
+## 0.4.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: Support WASM ([#253](https://github.com/Bdaya-Dev/oidc/issues/253)). ([8b2931ef](https://github.com/Bdaya-Dev/oidc/commit/8b2931ef64c7b25609db563e3d14bf37f5504922))
+
+## 0.3.1+3
+
+ - **DOCS**: Add openid certification mark ([#240](https://github.com/Bdaya-Dev/oidc/issues/240)). ([89313199](https://github.com/Bdaya-Dev/oidc/commit/8931319937b9c263abae9ac873433dd6bd5fa637))
+
+## 0.3.1+2
+
+ - Update a dependency to the latest release.
+
+## 0.3.1+1
+
+ - Update a dependency to the latest release.
+
+## 0.3.1
+
+ - **FEAT**: Enhance OIDC store with manager ID support. ([56f42f2d](https://github.com/Bdaya-Dev/oidc/commit/56f42f2d67fd97c587611870e412de8cb357c4e4))
+
+## 0.3.0+5
+
+ - Update a dependency to the latest release.
+
 ## 0.3.0+4
 
  - **REFACTOR**: minor lints and refactors. ([5ab9af70](https://github.com/Bdaya-Dev/oidc/commit/5ab9af70140be2a11f54d62a9d93c9c6edc9e554))

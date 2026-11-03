@@ -8,6 +8,128 @@ Duration? defaultRefreshBefore(OidcToken token) {
   return const Duration(minutes: 1);
 }
 
+/// The callback used by [OidcUserManagerSettings.isLoadedTokenAcceptable] to
+/// decide, when tokens are restored from the [OidcStore] during `init()`,
+/// whether the loaded token should be treated as acceptable despite (or in the
+/// absence of) validation errors.
+///
+/// [validationErrors] is the exact list produced by the manager's internal
+/// `validateUser` for the loaded id_token (empty when the token validated
+/// cleanly).
+///
+/// Return:
+/// - `true`  → accept the loaded token as-is and surface the user immediately,
+///   skipping the refresh / userinfo round-trips.
+/// - `false` → reject the loaded token (proceed to the discard branch, see
+///   [OidcShouldRemoveInvalidTokenCallback]).
+/// - `null`  → apply the default policy (the current, unchanged behavior:
+///   refresh when expired, then re-validate).
+typedef OidcIsLoadedTokenAcceptableCallback =
+    bool? Function(OidcUser user, List<Exception> validationErrors);
+
+/// The callback used by [OidcUserManagerSettings.shouldRemoveInvalidToken] to
+/// decide whether a loaded-but-invalid token is removed from the [OidcStore].
+///
+/// Invoked in the discard branch of cached-token loading with the loaded
+/// [user] and its [validationErrors].
+///
+/// Return:
+/// - `true`  → remove the cached tokens from the store.
+/// - `false` → keep the cached tokens (e.g. for a bespoke offline policy).
+/// - `null`  → apply the default policy, which removes the tokens unless
+///   [OidcUserManagerSettings.supportOfflineAuth] is enabled.
+typedef OidcShouldRemoveInvalidTokenCallback =
+    bool? Function(OidcUser user, List<Exception> validationErrors);
+
+/// Controls how [OidcUserManagerBase.init] restores a previously-cached user.
+///
+/// **This changes the DEFAULT `init()` semantics** (see [OidcInitMode.cacheFirst]
+/// vs [OidcInitMode.blockingValidate]).
+enum OidcInitMode {
+  /// **The new default.** `init()` restores the cached user by a PURE local
+  /// deserialize (no network) and completes immediately, then revalidates in
+  /// the background — refreshing the discovery document if it is stale
+  /// (see [OidcUserManagerSettings.discoveryDocumentMaxAge]), refreshing the
+  /// token if it is expired, and calling the userinfo endpoint when enabled.
+  ///
+  /// Background outcomes are surfaced through the existing channels:
+  /// [OidcUserManagerBase.userChanges] emits when the user object changes and
+  /// [OidcUserManagerBase.events] emits on failures. When there is no cached
+  /// user (or no locally-cached discovery document), `init()` transparently
+  /// falls back to the [blockingValidate] network path.
+  ///
+  /// This makes cold-start `init()` fast and offline-friendly at the cost of a
+  /// brief window where the surfaced user has not yet been re-verified against
+  /// the network.
+  ///
+  /// **Note — [OidcUserManagerBase.userChanges] emits TWICE on a cold start:**
+  /// once for the locally-restored (unverified) user, then again for the
+  /// background-rebuilt user once revalidation completes. The second object is
+  /// distinct even when its claims are unchanged — its id_token is now VERIFIED
+  /// (`parsedIdToken.isVerified == true`) and/or its token was refreshed — so
+  /// this second emission is intentional and must not be deduplicated: it is how
+  /// the verified/refreshed state is surfaced. Listeners that need a single
+  /// settled value should key off `parsedIdToken.isVerified` (or use
+  /// [blockingValidate]).
+  cacheFirst,
+
+  /// The pre-existing semantics (opt-in escape hatch): `init()` blocks until
+  /// the discovery document is fetched/validated and the cached token is fully
+  /// re-verified (and refreshed/userinfo-fetched) before completing. Choose
+  /// this when callers must not observe an unverified user after `init()`.
+  ///
+  /// **Not a byte-for-byte replica of the pre-1.0 `init()` network behavior.**
+  /// The discovery document is now served from the shared TTL cache
+  /// (see [OidcUserManagerSettings.discoveryDocumentMaxAge], default 1 day), so
+  /// a cached `.well-known` document within that window is NOT re-fetched — the
+  /// old code fetched it on every `init()`. To reproduce the exact previous
+  /// network behavior (a discovery fetch on every `init()`), also set
+  /// `discoveryDocumentMaxAge: Duration.zero`.
+  blockingValidate,
+}
+
+/// The callback used to determine the retry delay for offline mode refresh attempts.
+typedef OidcOfflineRefreshRetryDelayCallback =
+    Duration Function(
+      int consecutiveFailures,
+    );
+
+/// Default threshold for emitting repeat refresh failure warnings.
+
+/// The default retry delay function with exponential backoff.
+/// Returns delays of: 30s, 1m, 2m, 4m, 5m (capped at 5 minutes).
+Duration defaultOfflineRefreshRetryDelay(int consecutiveFailures) {
+  // Exponential backoff: 30s, 1m, 2m, 4m, 5m (capped)
+  const baseDelay = Duration(seconds: 30);
+  final exponentialDelay = baseDelay * (1 << (consecutiveFailures - 1));
+  const maxDelay = Duration(minutes: 5);
+
+  return exponentialDelay > maxDelay ? maxDelay : exponentialDelay;
+}
+
+/// Controls whether the authorization-code login flow uses RFC 9126 Pushed
+/// Authorization Requests (PAR).
+///
+/// Note: under PAR the authorization parameters are frozen when the PAR request
+/// is posted (the front channel then carries only `client_id` + `request_uri`),
+/// so parameters added by the `authorization` hook do NOT reach the server.
+/// Supply such parameters via `extraAuthenticationParameters` instead — those
+/// are part of the pushed request body.
+enum OidcPushedAuthorizationRequestsMode {
+  /// Use PAR only when the authorization server requires it via discovery
+  /// metadata (`require_pushed_authorization_requests` == true). Servers that
+  /// don't require PAR behave exactly as without this setting (the default).
+  auto,
+
+  /// Always use PAR when the server advertises a
+  /// `pushed_authorization_request_endpoint`.
+  always,
+
+  /// Never use PAR, even if the server requires it (the server will then reject
+  /// the direct authorization request).
+  never,
+}
+
 ///
 class OidcUserManagerSettings {
   ///
@@ -22,6 +144,12 @@ class OidcUserManagerSettings {
     this.maxAge,
     this.extraAuthenticationParameters,
     this.expiryTolerance = const Duration(minutes: 1),
+    this.jwksCacheMaxAge = const Duration(days: 1),
+    this.discoveryDocumentMaxAge = const Duration(days: 1),
+    this.initMode = OidcInitMode.cacheFirst,
+    this.metadataSeed,
+    this.isLoadedTokenAcceptable,
+    this.shouldRemoveInvalidToken,
     this.extraTokenParameters,
     this.postLogoutRedirectUri,
     this.options,
@@ -30,11 +158,29 @@ class OidcUserManagerSettings {
     this.frontChannelRequestListeningOptions =
         const OidcFrontChannelRequestListeningOptions(),
     this.refreshBefore = defaultRefreshBefore,
-    this.strictJwtVerification = false,
+    this.allowedIdTokenAlgorithms,
+    this.strictIssuerValidation = true,
+    this.verifySignedMetadata = false,
+    this.allowedSignedMetadataAlgorithms,
+    this.expectedIssuer,
+    this.pushedAuthorizationRequestsMode =
+        OidcPushedAuthorizationRequestsMode.auto,
+    this.dpop,
+    this.allowedAudiences,
+    this.resource,
+    this.requestObject,
+    this.revokeTokensOnLogout = true,
     this.getExpiresIn,
     this.sessionManagementSettings = const OidcSessionManagementSettings(),
     this.getIdToken,
     this.supportOfflineAuth = false,
+    this.offlineRefreshRetryDelay = defaultOfflineRefreshRetryDelay,
+    this.offlineRepeatFailureWarningThreshold = 3,
+    this.hooks,
+    this.extraRevocationParameters,
+    this.extraRevocationHeaders,
+    this.useMtlsEndpointAliases = false,
+    this.dynamicClientRegistration,
   });
 
   /// The default scopes
@@ -43,10 +189,218 @@ class OidcUserManagerSettings {
   /// Settings to control using the user_info endpoint.
   final OidcUserInfoSettings userInfoSettings;
 
-  /// whether JWTs are strictly verified.
+  /// Optional explicit allowlist of JWS signing algorithms (canonical JWA
+  /// names, e.g. `['RS256','ES256']`) that an id_token's `alg` header is
+  /// permitted to use.
   ///
-  /// If set to true, the library will throw an exception if a JWT is invalid.
-  final bool strictJwtVerification;
+  /// When non-null, this list **replaces** the OP-advertised
+  /// `id_token_signing_alg_values_supported` as the source of the verification
+  /// allowlist (defense-in-depth: the RP stops trusting the OP's self-declared
+  /// list). When null (the default), behavior is unchanged — the OP-advertised
+  /// `id_token_signing_alg_values_supported` is used.
+  ///
+  /// `none` is always stripped regardless of this setting (existing behavior in
+  /// [OidcUser]), so it can never be re-enabled via this list.
+  ///
+  /// Names must match `jose_plus`/JWA canonical casing (uppercase, e.g.
+  /// `'RS256'`); a wrong-case or empty effective list will reject every
+  /// id_token (fail-closed).
+  ///
+  /// Per OpenID Connect Core §3.1.3.7 (step 7) and RFC 8725 (JWT BCP) §3.1
+  /// "Perform Algorithm Verification", which require the verifier to constrain
+  /// accepted algorithms to an explicit caller-controlled set.
+  final List<String>? allowedIdTokenAlgorithms;
+
+  /// When `true` (the **default**), after the discovery document is loaded the
+  /// manager asserts that its `issuer` matches the expected issuer per OIDC
+  /// Discovery 1.0 §4.3 / RFC 8414 §3.3 ("If these values are not identical,
+  /// the data contained in the response MUST NOT be used"), throwing an
+  /// [OidcException] on mismatch. A rejected document is neither persisted
+  /// nor kept in memory: after a failed `init()` the manager has no discovery
+  /// document and every flow (including `getAccessToken()`, which used to
+  /// return `null` there) throws instead of building a request. A rejected
+  /// background (cache-first) refresh is treated like an unreachable network:
+  /// the previously validated document stays in use and the restored session
+  /// is still re-verified against it. A cached document that fails the check
+  /// is discarded and fetched again.
+  ///
+  /// The expected issuer is [expectedIssuer] when set (compared exactly, see
+  /// [OidcUtils.discoveryIssuerMatches]); otherwise it is derived from the
+  /// well-known URL (OIDC §4.1 or RFC 8414 §3.1 layout). A derived issuer
+  /// cannot tell `X` from `X/` (both layouts strip the terminating `/`), so
+  /// for it a discovery `issuer` of `X/` is also accepted. An eagerly-supplied
+  /// document with no [expectedIssuer], or a custom discovery URL that cannot be
+  /// inverted, is not checked.
+  ///
+  /// Microsoft Entra ID multi-tenant (`common`/`organizations`, v2.0) keeps
+  /// working: its templated issuer
+  /// (`https://login.microsoftonline.com/{tenantid}/v2.0`) matches an
+  /// [expectedIssuer] pinned to a concrete tenant. Other Entra authorities
+  /// whose issuer differs from the URL they are served at:
+  ///
+  ///  - **Tenant addressed by domain name** (e.g.
+  ///    `https://login.microsoftonline.com/contoso.onmicrosoft.com/v2.0`): the
+  ///    issuer carries the tenant GUID. Use the GUID authority
+  ///    (`https://login.microsoftonline.com/<tenant-GUID>/v2.0`) or set
+  ///    [expectedIssuer] to that GUID issuer.
+  ///  - **`consumers`** (`.../consumers/v2.0`): the issuer is the concrete
+  ///    Microsoft-account tenant
+  ///    (`https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0`),
+  ///    not a template. Set [expectedIssuer] to it.
+  ///  - **v1 `common`** (`https://login.microsoftonline.com/common`): the issuer
+  ///    is on another host (`https://sts.windows.net/{tenantid}/`). Set
+  ///    [expectedIssuer] to `https://sts.windows.net/<tenant-GUID>/`.
+  ///
+  /// Providers whose discovery `issuer` genuinely differs from the URL it is
+  /// served at (e.g. Azure AD B2C) need [expectedIssuer] set to that issuer.
+  ///
+  /// **Azure AD B2C** is the common case of a genuinely different issuer: with
+  /// its default token-compatibility setting (the "Issuer (iss) claim"
+  /// property, `AuthorityAndTenantGuid`), a discovery document fetched at
+  /// `https://fabrikamb2c.b2clogin.com/fabrikamb2c.onmicrosoft.com/B2C_1_susi/v2.0/.well-known/openid-configuration`
+  /// advertises
+  /// `"issuer": "https://fabrikamb2c.b2clogin.com/775527ff-9a37-4307-8b3d-cc311f58d925/v2.0/"`
+  /// — the tenant domain replaced by the tenant GUID, the policy segment
+  /// dropped, with a trailing slash (see Microsoft's [token compatibility
+  /// settings](https://learn.microsoft.com/azure/active-directory-b2c/tokens-overview#compatibility)
+  /// and, for custom policies, [`IssuanceClaimPattern`](https://learn.microsoft.com/azure/active-directory-b2c/jwt-issuer-technical-profile)).
+  /// Three ways to handle this, most to least preferred:
+  ///
+  ///  1. Switch the user flow/custom policy's "Issuer (iss) claim"
+  ///     (`IssuanceClaimPattern` in custom policies) to `AuthorityWithTfp`,
+  ///     and use the matching `/tfp/.../.well-known/openid-configuration`
+  ///     discovery URL. This makes the issuer
+  ///     `https://<host>/tfp/<tenant-GUID>/<policy>/v2.0/`, which is what that
+  ///     discovery URL derives to by default (no [expectedIssuer] needed).
+  ///     Microsoft documents this as the option for OpenID Connect
+  ///     Discovery 1.0-compliant issuers. The path comparison is
+  ///     case-sensitive, so the discovery URL's tenant and policy segments
+  ///     must use the same casing B2C emits in the issuer (it may lower-case
+  ///     the policy name); otherwise set [expectedIssuer].
+  ///  2. Keep B2C's default issuer format and set [expectedIssuer] to the
+  ///     actual issuer B2C returns, e.g. the GUID-form issuer shown above.
+  ///  3. Last resort: set this to `false`, which only warns instead of
+  ///     rejecting the document.
+  ///
+  /// When `false`, a mismatch is only logged as a warning and the document is
+  /// still used. This was the default before; it lets a provider that is not
+  /// the one the RP configured supply every endpoint, so only opt out when
+  /// [expectedIssuer] cannot describe the provider.
+  final bool strictIssuerValidation;
+
+  /// Master gate for RFC 8414 §2.1 signed authorization-server metadata
+  /// verification.
+  ///
+  /// When `true` AND the discovery document carries a `signed_metadata` member
+  /// (RFC 8414 §2.1), the JWT is signature-verified against keys bootstrapped
+  /// from the (TLS-fetched) plain `jwks_uri`, and its verified claims override
+  /// the corresponding plain JSON values (RFC 8414 §3.2) before the document is
+  /// issuer-validated and persisted.
+  ///
+  /// When `false` (the **default**), `signed_metadata` is ignored entirely and
+  /// the plain JSON is used as-is — preserving out-of-the-box Microsoft Entra /
+  /// Azure AD B2C compatibility (those IdPs do not emit `signed_metadata`).
+  ///
+  /// On a verification failure, the document is refused and NOT persisted
+  /// (fail-closed — there is no fall back to the unverified plain document).
+  /// Recommend `true` (with [allowedSignedMetadataAlgorithms] pinned) for
+  /// FAPI / high-assurance deployments.
+  final bool verifySignedMetadata;
+
+  /// Optional explicit allowlist of JWS algorithms permitted for the
+  /// `signed_metadata` JWT (canonical JWA names, e.g. `['RS256','ES256']`),
+  /// mirroring [allowedIdTokenAlgorithms].
+  ///
+  /// `none` is ALWAYS stripped regardless of this list. When null (the
+  /// default), any non-`none` algorithm the AS used is accepted; set this to
+  /// pin a safe set (recommended). Names must use `jose_plus` canonical casing
+  /// (uppercase, e.g. `'RS256'`).
+  ///
+  /// Only consulted when [verifySignedMetadata] is `true`.
+  final List<String>? allowedSignedMetadataAlgorithms;
+
+  /// Optional explicit issuer to compare the discovery document's `issuer`
+  /// against (authoritative when set).
+  ///
+  /// When set it is ALSO the issuer an id_token's `iss` claim is validated
+  /// against (OpenID Connect Core §3.1.3.7 step 2), overriding the advertised
+  /// discovery `issuer`. This is the pin Microsoft Entra ID multi-tenant
+  /// (`common`/`organizations`) RPs need: the OP advertises a non-substituted
+  /// template issuer (`https://login.microsoftonline.com/{tenantid}/v2.0`) that
+  /// never equals the concrete per-tenant `iss` a real id_token carries, so
+  /// pinning the concrete tenant issuer here lets `validateUser` pass. When null
+  /// (the default) the advertised `metadata.issuer` is used unchanged.
+  ///
+  /// When null (default) and a `discoveryDocumentUri` is present, the expected
+  /// issuer is derived by stripping the trailing
+  /// `.well-known/openid-configuration` segments from `discoveryDocumentUri`
+  /// (the inverse of [OidcUtils.getOpenIdConfigWellKnownUri], which every
+  /// in-repo call site uses to build the URL).
+  ///
+  /// Set this for issuers that contain a trailing slash, for custom/non-standard
+  /// discovery URLs (e.g. Entra `?appid=` query, RFC 8414 insert-layout), or
+  /// when constructing the manager with an eagerly-supplied `discoveryDocument`
+  /// (no `discoveryDocumentUri` to derive from). It is also how Azure AD B2C
+  /// users pin [strictIssuerValidation] to B2C's actual (GUID-form) issuer
+  /// instead of relaxing that check — see [strictIssuerValidation] for the
+  /// full set of options, including the spec-compliant `/tfp/` issuer format.
+  ///
+  /// Comparison against the discovery `issuer` is the spec-mandated
+  /// simple-string match via [OidcUtils.discoveryIssuerMatches] (case-folds
+  /// scheme+host only; path and trailing slash stay significant), plus
+  /// Entra's `{tenantid}` template matching a concrete tenant segment.
+  final Uri? expectedIssuer;
+
+  /// Whether/when the authorization-code login flow uses RFC 9126 Pushed
+  /// Authorization Requests (PAR). Defaults to
+  /// [OidcPushedAuthorizationRequestsMode.auto] — follow the server's
+  /// `require_pushed_authorization_requests` metadata, which is non-breaking
+  /// for servers that don't require PAR.
+  final OidcPushedAuthorizationRequestsMode pushedAuthorizationRequestsMode;
+
+  /// Enables + configures DPoP (Demonstrating Proof of Possession, RFC 9449).
+  ///
+  /// When non-null, the manager generates a per-session DPoP proof key and
+  /// attaches a DPoP proof to token requests, sender-constraining the issued
+  /// tokens to that key. Null (the default) disables DPoP.
+  final OidcDPoPSettings? dpop;
+
+  /// Optional strict allowlist for additional ID-token audiences.
+  ///
+  /// The current client's `client_id` is always required to be present in the
+  /// ID token's `aud` claim.
+  ///
+  /// When this value is `null` (the default), additional audiences are allowed.
+  /// This follows OpenID Connect Core §3.1.3.7: an RP must verify that its own
+  /// `client_id` is in `aud`; a token may contain multiple audiences.
+  ///
+  /// When non-null, this enables a stricter deployment policy: every audience
+  /// in the ID token must be either this client's `client_id` or one of these
+  /// configured values.
+  ///
+  /// For multi-audience ID tokens, the manager also requires `azp` to be
+  /// present and equal to this client's `client_id`.
+  final List<String>? allowedAudiences;
+
+  /// RFC 8707 Resource Indicators: the protected resource(s) the issued tokens
+  /// are intended for. When set, it is sent on the authorization request and on
+  /// refresh/token requests (as one repeated `resource` parameter per value).
+  final List<Uri>? resource;
+
+  /// JWT-Secured Authorization Request (JAR, RFC 9101) settings. When set, the
+  /// authorization request parameters are signed into a `request` object and
+  /// the front-channel request collapses to `client_id` + `response_type` +
+  /// `scope` + `request`.
+  final OidcRequestObjectSettings? requestObject;
+
+  /// Whether [OidcUserManagerBase.logout] also revokes the refresh and access
+  /// tokens at the provider's `revocation_endpoint` (RFC 7009) before ending
+  /// the session. Defaults to `true`.
+  ///
+  /// Revocation is best-effort: it is a no-op when the provider advertises no
+  /// `revocation_endpoint`, and a revocation failure never blocks logout (it is
+  /// logged and swallowed). Set to `false` to keep logout purely front-channel.
+  final bool revokeTokensOnLogout;
 
   /// Whether to support offline authentication or not.
   ///
@@ -55,6 +409,26 @@ class OidcUserManagerSettings {
   ///
   /// This parameter is disabled by default due to security concerns.
   final bool supportOfflineAuth;
+
+  /// The retry delay calculation for offline mode refresh attempts.
+  ///
+  /// This callback receives the number of consecutive refresh failures and
+  /// returns the duration to wait before the next retry attempt.
+  ///
+  /// The default implementation uses exponential backoff:
+  /// - 1st failure: 30 seconds
+  /// - 2nd failure: 1 minute
+  /// - 3rd failure: 2 minutes
+  /// - 4th failure: 4 minutes
+  /// - 5th+ failure: 5 minutes (capped)
+  ///
+  /// This helps reduce battery usage and server load during extended outages.
+  final OidcOfflineRefreshRetryDelayCallback offlineRefreshRetryDelay;
+
+  /// The number of consecutive refresh failures before emitting a warning.
+  ///
+  /// Set to `0` or a negative value to disable repeat failure warnings.
+  final int offlineRepeatFailureWarningThreshold;
 
   /// see [OidcAuthorizeRequest.redirectUri].
   final Uri redirectUri;
@@ -71,7 +445,7 @@ class OidcUserManagerSettings {
   ///
   /// [frontChannelLogoutUri] must be set for this to work.
   final OidcFrontChannelRequestListeningOptions
-      frontChannelRequestListeningOptions;
+  frontChannelRequestListeningOptions;
 
   /// see [OidcAuthorizeRequest.scope].
   final List<String> scope;
@@ -100,8 +474,88 @@ class OidcUserManagerSettings {
   /// see [OidcTokenRequest.extra]
   final Map<String, dynamic>? extraTokenParameters;
 
+  /// see [OidcRevocationRequest.extra]
+  final Map<String, dynamic>? extraRevocationParameters;
+
+  /// Extra headers to send with the revocation request.
+  final Map<String, String>? extraRevocationHeaders;
+
   /// see [OidcIdTokenVerificationOptions.expiryTolerance].
   final Duration expiryTolerance;
+
+  /// How long a persisted (offline) JWKS may be served as a fallback when the
+  /// OP's `jwks_uri` is unreachable, before it is treated as stale and
+  /// id_token/logout_token verification fails-closed instead of trusting a
+  /// possibly-rotated key.
+  ///
+  /// Threaded into [OidcJwksStoreLoader.staleCacheMaxAge] for every id_token
+  /// and front-channel/logout-token verification. Lower it for
+  /// high-assurance/FAPI deployments; raise it for longer offline tolerance.
+  ///
+  /// Defaults to `const Duration(days: 1)`. Per OpenID Connect Core 1.0 §10.1.1
+  /// (Rotation of Asymmetric Signing Keys), an RP must obtain rotated keys and
+  /// must not pin a stale/retired key set indefinitely.
+  final Duration jwksCacheMaxAge;
+
+  /// How long a persisted discovery document may be served from the
+  /// [OidcStore] before it is treated as stale and re-fetched from the network.
+  ///
+  /// The document is persisted alongside a sidecar epoch-millis fetched-at
+  /// timestamp (mirroring [OidcJwksStoreLoader]'s `::oidc_jwks_fetched_at`
+  /// pattern, under the `::oidc_discovery_fetched_at` key). Within this window
+  /// the manager skips the network `.well-known` fetch and uses the cached
+  /// document; beyond it the document is refreshed (in the background under
+  /// [OidcInitMode.cacheFirst], blocking under [OidcInitMode.blockingValidate]).
+  /// If the refresh fails (e.g. offline), the stale cached document is still
+  /// served (mirroring the JWKS loader's offline-fallback behavior).
+  ///
+  /// [Duration.zero]/negative disables the TTL cache — every `init()` re-fetches
+  /// the document (the cached copy remains only as an offline fallback).
+  ///
+  /// Defaults to `const Duration(days: 1)`, matching [jwksCacheMaxAge] and the
+  /// ~24h OP-metadata TTL used by MSAL. (oidc-client-ts caches OP metadata
+  /// only in-memory for the session; this persists it across restarts.)
+  final Duration discoveryDocumentMaxAge;
+
+  /// Controls how [OidcUserManagerBase.init] restores a cached user.
+  ///
+  /// Defaults to [OidcInitMode.cacheFirst] — **this changes the default
+  /// `init()` semantics** to restore the cached user locally (no network) and
+  /// revalidate in the background. Set to [OidcInitMode.blockingValidate] to
+  /// keep the previous behavior (block on the network until the cached token is
+  /// fully re-verified before `init()` completes).
+  ///
+  /// [OidcInitMode.blockingValidate] is close to but NOT a byte-for-byte replica
+  /// of the pre-1.0 `init()`: the discovery document is now served from the
+  /// [discoveryDocumentMaxAge] TTL cache, so a `.well-known` fetch within that
+  /// window is skipped. Combine it with `discoveryDocumentMaxAge: Duration.zero`
+  /// to also restore the previous fetch-on-every-`init()` network behavior.
+  final OidcInitMode initMode;
+
+  /// An optional base discovery document whose members are merged UNDER the
+  /// fetched (or cached) document — the fetched/cached values override the seed
+  /// (matching oidc-client-ts `metadataSeed` semantics).
+  ///
+  /// Use this to supply endpoints an OP omits from its `.well-known` document,
+  /// or to prime the manager before the first network fetch. The seed does not
+  /// affect the eagerly-supplied [OidcUserManagerBase] (non-`.lazy`) constructor
+  /// path, which is a full override and stays untouched. The seed is applied
+  /// in-memory on every load and is never persisted.
+  final OidcProviderMetadata? metadataSeed;
+
+  /// Optional developer control over whether a token restored from the store
+  /// during `init()` is accepted despite (or in the absence of) validation
+  /// errors. See [OidcIsLoadedTokenAcceptableCallback].
+  ///
+  /// Defaults to `null` — the current behavior is preserved exactly.
+  final OidcIsLoadedTokenAcceptableCallback? isLoadedTokenAcceptable;
+
+  /// Optional developer control over whether a loaded-but-invalid token is
+  /// removed from the store. See [OidcShouldRemoveInvalidTokenCallback].
+  ///
+  /// Defaults to `null` — the current behavior is preserved exactly (removed
+  /// unless [supportOfflineAuth] is enabled).
+  final OidcShouldRemoveInvalidTokenCallback? shouldRemoveInvalidToken;
 
   /// Settings related to the session management spec.
   final OidcSessionManagementSettings sessionManagementSettings;
@@ -118,15 +572,47 @@ class OidcUserManagerSettings {
   /// overrides a token's expires_in value.
   final Duration? Function(OidcTokenResponse tokenResponse)? getExpiresIn;
 
-  /// pass this function to control how and idToken is fetched from a
+  /// pass this function to control how an `id_token` is fetched from a
   /// token response.
   ///
-  /// This can be used to trick the user manager into using a JWT access_token
-  /// as an id_token for example.
+  /// This can be used to trick the user manager into using a JWT `access_token`
+  /// as an `id_token` for example.
   final Future<String?> Function(OidcToken token)? getIdToken;
 
   /// platform-specific options.
   final OidcPlatformSpecificOptions? options;
+
+  /// Customized hooks to modify the user manager behavior.
+  final OidcUserManagerHooks? hooks;
+
+  /// RFC 8705 §5: when `true`, every request the manager makes directly to the
+  /// authorization server (token for every grant, UserInfo, revocation,
+  /// introspection, PAR, device authorization and dynamic client registration)
+  /// resolves its endpoint through the server's `mtls_endpoint_aliases`,
+  /// falling back to the conventional endpoint when a given alias is absent,
+  /// via [OidcUserManagerBase.resolveEndpoint] /
+  /// [OidcProviderMetadata.resolveEndpoint]. Aliases of front-channel endpoints
+  /// are ignored (RFC 8705 §5), and `jwks_uri` is never aliased.
+  ///
+  /// Defaults to `false`. This is NOT auto-inferred from the selected client
+  /// authentication method: an mTLS-authenticating client only needs the alias
+  /// endpoints when the server publishes them, and enabling it must be an
+  /// explicit deployment decision (RFC 8705 §5).
+  ///
+  /// Note: this setting only governs endpoint selection. The client certificate
+  /// is presented by the manager's `httpClient`; build one with
+  /// [OidcMtls.createHttpClient].
+  final bool useMtlsEndpointAliases;
+
+  /// Enables + configures RFC 7591 Dynamic Client Registration.
+  ///
+  /// When non-null, `init()` registers the client at the discovery document's
+  /// `registration_endpoint` (reusing a previously-persisted registration when
+  /// one exists for this issuer) and swaps
+  /// [OidcUserManagerBase.clientCredentials] to the issued credentials before
+  /// any token/authorization request is built. Null (the default) disables DCR
+  /// and preserves today's behaviour exactly.
+  final OidcDynamicClientRegistrationSettings? dynamicClientRegistration;
 }
 
 ///
@@ -139,6 +625,8 @@ class OidcUserInfoSettings {
     this.sendUserInfoRequest = true,
     this.followDistributedClaims = true,
     this.getAccessTokenForDistributedSource,
+    this.validateSignedResponseClaims = true,
+    this.requireSignedResponseIssAud = false,
   });
 
   /// Where to put the access token.
@@ -158,7 +646,32 @@ class OidcUserInfoSettings {
   /// this function gets called whenever there is an endpoint with no access token,
   /// to try and get the access token.
   final Future<String?> Function(String, Uri)?
-      getAccessTokenForDistributedSource;
+  getAccessTokenForDistributedSource;
+
+  /// When the UserInfo endpoint returns a signed JWT
+  /// (`Content-Type: application/jwt`) that was verified against the keyStore,
+  /// validate its `iss`/`aud`/`exp` claims per OIDC Core 5.3.2/5.3.4.
+  ///
+  /// `iss` (when present) MUST exactly match the OP issuer; `aud` (when present)
+  /// MUST contain the RP `client_id`; `exp` (when present) MUST NOT be past
+  /// (within `expiryTolerance`).
+  ///
+  /// Set `false` to opt out (e.g. a non-conformant OP). Has no effect on plain
+  /// `application/json` responses.
+  ///
+  /// Defaults to `true`.
+  final bool validateSignedResponseClaims;
+
+  /// Upgrades the OIDC Core 5.3.2 SHOULD for `iss`/`aud` presence on a signed
+  /// UserInfo JWT to a MUST.
+  ///
+  /// When `true`, a signed (verified) UserInfo JWT that omits `iss` OR `aud` is
+  /// rejected. Default `false` stays lenient (validate only when the claim is
+  /// present), matching common OP behaviour and the spec's SHOULD. Enable for
+  /// FAPI/strict deployments.
+  ///
+  /// Ignored when [validateSignedResponseClaims] is `false`.
+  final bool requireSignedResponseIssAud;
 }
 
 ///
@@ -168,6 +681,7 @@ class OidcSessionManagementSettings {
     this.enabled = false,
     this.interval = const Duration(seconds: 5),
     this.stopIfErrorReceived = true,
+    this.endSessionConfirmationTimeout = const Duration(seconds: 10),
   });
 
   /// pass `true` if you want to enable the session checking.
@@ -184,4 +698,19 @@ class OidcSessionManagementSettings {
   ///
   /// by default this is true.
   final bool stopIfErrorReceived;
+
+  /// How long the one-off `check_session_iframe` probe made after an
+  /// RP-initiated logout waits for the OP's answer before reporting
+  /// [OidcEndSessionConfirmationOutcome.timedOut] on
+  /// [OidcUserManagerBase.events] (see [OidcEndSessionConfirmationEvent]).
+  ///
+  /// The probe never delays logout (it starts just before the user is
+  /// forgotten, and its answer arrives after), so this only bounds how long its hidden iframe may linger and when the
+  /// event is emitted. It covers loading the OP iframe document over the
+  /// network plus a postMessage round trip; the probe re-sends its
+  /// postMessage every [interval], so the default (twice the default
+  /// [interval]) leaves room for one retry.
+  ///
+  /// default is 10 seconds.
+  final Duration endSessionConfirmationTimeout;
 }

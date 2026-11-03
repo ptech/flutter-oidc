@@ -46,6 +46,7 @@ class OidcProviderMetadata extends JsonBasedResponse {
     this.uiLocalesSupported,
     this.pushedAuthorizationRequestEndpoint,
     this.claimsParameterSupported,
+    this.authorizationResponseIssParameterSupported,
     this.requestParameterSupported,
     this.requireRequestUriRegistration,
     this.requestUriParameterSupported,
@@ -54,6 +55,10 @@ class OidcProviderMetadata extends JsonBasedResponse {
     this.opTosUri,
     this.checkSessionIframe,
     this.endSessionEndpoint,
+    this.frontchannelLogoutSupported,
+    this.frontchannelLogoutSessionSupported,
+    this.backchannelLogoutSupported,
+    this.backchannelLogoutSessionSupported,
     this.revocationEndpoint,
     this.revocationEndpointAuthMethodsSupported,
     this.revocationEndpointAuthSigningAlgValuesSupported,
@@ -84,7 +89,10 @@ class OidcProviderMetadata extends JsonBasedResponse {
   final Uri? tokenEndpoint;
 
   /// URL of the OP's UserInfo Endpoint.
-  @JsonKey(name: OidcConstants_ProviderMetadata.userinfoEndpoint)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.userinfoEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? userinfoEndpoint;
 
   /// URL of the OP's JSON Web Key Set document.
@@ -95,7 +103,10 @@ class OidcProviderMetadata extends JsonBasedResponse {
   final Uri? jwksUri;
 
   /// URL of the OP's Dynamic Client Registration Endpoint.
-  @JsonKey(name: OidcConstants_ProviderMetadata.registrationEndpoint)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.registrationEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? registrationEndpoint;
 
   /// A list of the OAuth 2.0 scope values that this server supports.
@@ -143,40 +154,46 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// from the Authorization Endpoint (such as when using the Authorization Code
   /// Flow).
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.idTokenSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata.idTokenSigningAlgValuesSupported,
+  )
   final List<String>? idTokenSigningAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`alg` values) supported by the OP
   /// for the ID Token to encode the Claims in a JWT.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.idTokenEncryptionAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata.idTokenEncryptionAlgValuesSupported,
+  )
   final List<String>? idTokenEncryptionAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`enc` values) supported by the OP
   /// for the ID Token to encode the Claims in a JWT.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.idTokenEncryptionEncValuesSupported)
+    name: OidcConstants_ProviderMetadata.idTokenEncryptionEncValuesSupported,
+  )
   final List<String>? idTokenEncryptionEncValuesSupported;
 
   /// A list of the JWS signing algorithms (`alg` values) supported by the
 
   /// UserInfo Endpoint to encode the Claims in a JWT.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.userinfoSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata.userinfoSigningAlgValuesSupported,
+  )
   final List<String>? userinfoSigningAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`alg` values) supported by the
   /// UserInfo Endpoint to encode the Claims in a JWT.
 
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.userinfoEncryptionAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata.userinfoEncryptionAlgValuesSupported,
+  )
   final List<String>? userinfoEncryptionAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`enc` values) supported by the
   /// UserInfo Endpoint to encode the Claims in a JWT.
 
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.userinfoEncryptionEncValuesSupported)
+    name: OidcConstants_ProviderMetadata.userinfoEncryptionEncValuesSupported,
+  )
   final List<String>? userinfoEncryptionEncValuesSupported;
 
   /// A list of the JWS signing algorithms (`alg` values) supported by the OP
@@ -186,8 +203,8 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// (using the request parameter) and when it is passed by reference (using
   /// the requestUri parameter).
   @JsonKey(
-      name:
-          OidcConstants_ProviderMetadata.requestObjectSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata.requestObjectSigningAlgValuesSupported,
+  )
   final List<String>? requestObjectSigningAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`alg` values) supported by the OP
@@ -196,8 +213,9 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// These algorithms are used both when the Request Object is passed by value
   /// and when it is passed by reference.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .requestObjectEncryptionAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata
+        .requestObjectEncryptionAlgValuesSupported,
+  )
   final List<String>? requestObjectEncryptionAlgValuesSupported;
 
   /// A list of the JWE encryption algorithms (`enc` values) supported by the OP
@@ -206,8 +224,9 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// These algorithms are used both when the Request Object is passed by value
   /// and when it is passed by reference.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .requestObjectEncryptionEncValuesSupported)
+    name: OidcConstants_ProviderMetadata
+        .requestObjectEncryptionEncValuesSupported,
+  )
   final List<String>? requestObjectEncryptionEncValuesSupported;
 
   /// A list of Client Authentication methods supported by this Token Endpoint.
@@ -216,7 +235,8 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// `clientSecretJwt`, and `privateKeyJwt`. Other authentication methods
   /// MAY be defined by extensions.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.tokenEndpointAuthMethodsSupported)
+    name: OidcConstants_ProviderMetadata.tokenEndpointAuthMethodsSupported,
+  )
   final List<String>? tokenEndpointAuthMethodsSupported;
 
   /// A list of the JWS signing algorithms (`alg` values) supported by the Token
@@ -224,8 +244,9 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// the Token Endpoint for the `privateKeyJwt` and `clientSecretJwt`
   /// authentication methods.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .tokenEndpointAuthSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata
+        .tokenEndpointAuthSigningAlgValuesSupported,
+  )
   final List<String>? tokenEndpointAuthSigningAlgValuesSupported;
 
   /// A list of the display parameter values that the OpenID Provider supports.
@@ -250,7 +271,10 @@ class OidcProviderMetadata extends JsonBasedResponse {
 
   /// URL of a page containing human-readable information that developers might
   /// want or need to know when using the OpenID Provider.
-  @JsonKey(name: OidcConstants_ProviderMetadata.serviceDocumentation)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.serviceDocumentation,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? serviceDocumentation;
 
   /// Languages and scripts supported for values in Claims being returned.
@@ -270,6 +294,17 @@ class OidcProviderMetadata extends JsonBasedResponse {
   bool get claimsParameterSupportedOrDefault =>
       claimsParameterSupported ?? false;
 
+  /// RFC 9207 §3: whether the AS supports the authorization-response `iss`
+  /// parameter. When `true`, the client MUST reject a response missing `iss`
+  /// (RFC 9207 §2.4). Absent ⇒ treated as `false` (lenient).
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata
+        .authorizationResponseIssParameterSupported,
+  )
+  final bool? authorizationResponseIssParameterSupported;
+  bool get authorizationResponseIssParameterSupportedOrDefault =>
+      authorizationResponseIssParameterSupported ?? false;
+
   /// `true` when the OP supports use of the `request` parameter.
   @JsonKey(name: OidcConstants_ProviderMetadata.requestParameterSupported)
   final bool? requestParameterSupported;
@@ -288,12 +323,18 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// URL that the OpenID Provider provides to the person registering the Client
   /// to read about the OP's requirements on how the Relying Party can use the
   /// data provided by the OP.
-  @JsonKey(name: OidcConstants_ProviderMetadata.opPolicyUri)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.opPolicyUri,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? opPolicyUri;
 
   /// URL that the OpenID Provider provides to the person registering the Client
   /// to read about OpenID Provider's terms of service.
-  @JsonKey(name: OidcConstants_ProviderMetadata.opTosUri)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.opTosUri,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? opTosUri;
 
   /// URL of an OP iframe that supports cross-origin communications for session
@@ -303,23 +344,66 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// it can run in the OP's security context. It accepts postMessage requests
   /// from the relevant RP iframe and uses postMessage to post back the login
   /// status of the End-User at the OP.
-  @JsonKey(name: OidcConstants_ProviderMetadata.checkSessionIframe)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.checkSessionIframe,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? checkSessionIframe;
 
   /// URL at the OP to which an RP can perform a redirect to request that the
   /// End-User be logged out at the OP.
-  @JsonKey(name: OidcConstants_ProviderMetadata.endSessionEndpoint)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.endSessionEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? endSessionEndpoint;
 
+  /// `true` when the OP supports HTTP-based (front-channel) logout, as
+  /// specified by OpenID Connect Front-Channel Logout 1.0. Absent ⇒ `false`.
+  @JsonKey(name: OidcConstants_ProviderMetadata.frontchannelLogoutSupported)
+  final bool? frontchannelLogoutSupported;
+  bool get frontchannelLogoutSupportedOrDefault =>
+      frontchannelLogoutSupported ?? false;
+
+  /// `true` when the OP can pass a `sid` (session ID) query parameter to
+  /// identify the RP session at the OP when front-channel logout is
+  /// supported. Absent ⇒ `false`.
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.frontchannelLogoutSessionSupported,
+  )
+  final bool? frontchannelLogoutSessionSupported;
+  bool get frontchannelLogoutSessionSupportedOrDefault =>
+      frontchannelLogoutSessionSupported ?? false;
+
+  /// `true` when the OP supports back-channel logout, as specified by
+  /// OpenID Connect Back-Channel Logout 1.0. Absent ⇒ `false`.
+  @JsonKey(name: OidcConstants_ProviderMetadata.backchannelLogoutSupported)
+  final bool? backchannelLogoutSupported;
+  bool get backchannelLogoutSupportedOrDefault =>
+      backchannelLogoutSupported ?? false;
+
+  /// `true` when the OP can pass a `sid` (session ID) Claim in the Logout
+  /// Token to identify the RP session at the OP when back-channel logout is
+  /// supported. Absent ⇒ `false`.
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.backchannelLogoutSessionSupported,
+  )
+  final bool? backchannelLogoutSessionSupported;
+  bool get backchannelLogoutSessionSupportedOrDefault =>
+      backchannelLogoutSessionSupported ?? false;
+
   /// URL of the authorization server's OAuth 2.0 revocation endpoint.
-  @JsonKey(name: OidcConstants_ProviderMetadata.revocationEndpoint)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.revocationEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? revocationEndpoint;
 
   /// A list of client authentication methods supported by this revocation
   /// endpoint.
   @JsonKey(
-      name:
-          OidcConstants_ProviderMetadata.revocationEndpointAuthMethodsSupported)
+    name: OidcConstants_ProviderMetadata.revocationEndpointAuthMethodsSupported,
+  )
   final List<String>? revocationEndpointAuthMethodsSupported;
 
   /// A list of the JWS signing algorithms (`alg` values) supported by the
@@ -327,19 +411,24 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// client at the revocation endpoint for the `privateKeyJwt` and
   /// `clientSecretJwt` authentication methods.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .revocationEndpointAuthSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata
+        .revocationEndpointAuthSigningAlgValuesSupported,
+  )
   final List<String>? revocationEndpointAuthSigningAlgValuesSupported;
 
   /// URL of the authorization server's OAuth 2.0 introspection endpoint.
-  @JsonKey(name: OidcConstants_ProviderMetadata.introspectionEndpoint)
+  @JsonKey(
+    name: OidcConstants_ProviderMetadata.introspectionEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? introspectionEndpoint;
 
   /// A list of client authentication methods supported by this introspection
   /// endpoint.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .introspectionEndpointAuthMethodsSupported)
+    name: OidcConstants_ProviderMetadata
+        .introspectionEndpointAuthMethodsSupported,
+  )
   final List<String>? introspectionEndpointAuthMethodsSupported;
 
   /// A list of the JWS signing algorithms (`alg` values) supported by the
@@ -347,8 +436,9 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// the client at the introspection endpoint for the `privateKeyJwt` and
   /// `clientSecretJwt` authentication methods.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata
-          .introspectionEndpointAuthSigningAlgValuesSupported)
+    name: OidcConstants_ProviderMetadata
+        .introspectionEndpointAuthSigningAlgValuesSupported,
+  )
   final List<String>? introspectionEndpointAuthSigningAlgValuesSupported;
 
   /// A list of PKCE code challenge methods supported by this authorization
@@ -362,7 +452,9 @@ class OidcProviderMetadata extends JsonBasedResponse {
   /// post an authorization request to exchange for a requestUri value usable
   /// at the authorization server.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.pushedAuthorizationRequestEndpoint)
+    name: OidcConstants_ProviderMetadata.pushedAuthorizationRequestEndpoint,
+    fromJson: OidcInternalUtilities.tryParseUri,
+  )
   final Uri? pushedAuthorizationRequestEndpoint;
 
   /// Boolean parameter indicating whether the authorization server accepts
@@ -370,8 +462,98 @@ class OidcProviderMetadata extends JsonBasedResponse {
   ///
   /// If omitted, the default value is false.
   @JsonKey(
-      name: OidcConstants_ProviderMetadata.requirePushedAuthorizationRequests)
+    name: OidcConstants_ProviderMetadata.requirePushedAuthorizationRequests,
+  )
   final bool? requirePushedAuthorizationRequests;
   bool get requirePushedAuthorizationRequestsOrDefault =>
       requirePushedAuthorizationRequests ?? false;
+
+  /// RFC 8705 §5 `mtls_endpoint_aliases`: the alternative endpoints a client
+  /// doing mutual TLS uses in preference to the conventional (top-level)
+  /// endpoints, or `null` when the server advertises none.
+  ///
+  /// Read lazily from [src] so it never affects the generated (de)serializer;
+  /// use [resolveEndpoint] to apply the RFC 8705 §5 alias-or-fallback rule.
+  OidcMtlsEndpointAliases? get mtlsEndpointAliases {
+    final raw = src[OidcConstants_ProviderMetadata.mtlsEndpointAliases];
+    if (raw is Map) {
+      return OidcMtlsEndpointAliases.fromJson(
+        Map<String, dynamic>.from(raw),
+      );
+    }
+    return null;
+  }
+
+  /// RFC 8705 §3.3: whether the authorization server supports mutual-TLS
+  /// client certificate-bound access tokens. `null` when unspecified.
+  ///
+  /// Read lazily from [src] so it never affects the generated (de)serializer.
+  bool? get tlsClientCertificateBoundAccessTokens {
+    final v =
+        src[OidcConstants_ProviderMetadata
+            .tlsClientCertificateBoundAccessTokens];
+    return v is bool ? v : null;
+  }
+
+  /// [tlsClientCertificateBoundAccessTokens] defaulting to `false` when absent,
+  /// per RFC 8705 §3.3 ("If omitted, the default value is false").
+  bool get tlsClientCertificateBoundAccessTokensOrDefault =>
+      tlsClientCertificateBoundAccessTokens ?? false;
+
+  /// The endpoint metadata keys the user-agent navigates to (front channel),
+  /// as opposed to endpoints the client requests directly. RFC 8705 §5 aliases
+  /// apply only to direct requests, so [resolveEndpoint] never aliases these.
+  static const Set<String> frontChannelEndpoints = {
+    OidcConstants_ProviderMetadata.authorizationEndpoint,
+    OidcConstants_ProviderMetadata.endSessionEndpoint,
+    OidcConstants_ProviderMetadata.checkSessionIframe,
+  };
+
+  /// Resolves the endpoint stored under [endpointName] (one of the
+  /// `OidcConstants_ProviderMetadata` endpoint keys), applying the RFC 8705 §5
+  /// mTLS alias rule.
+  ///
+  /// When [useMtlsAliases] is `true` and [mtlsEndpointAliases] contains an
+  /// alias for [endpointName], the alias is returned; otherwise the
+  /// conventional (top-level) endpoint is returned. Returns `null` when neither
+  /// is present or parseable. This is the single choke point through which mTLS
+  /// alias routing is applied.
+  ///
+  /// An alias for a front-channel endpoint ([frontChannelEndpoints]: the
+  /// authorization, end-session and check-session endpoints, which the
+  /// user-agent visits rather than the client calling directly) is always
+  /// ignored: RFC 8705 §5 says such members "have no meaning and SHOULD be
+  /// ignored".
+  Uri? resolveEndpoint(
+    String endpointName, {
+    bool useMtlsAliases = false,
+  }) {
+    if (useMtlsAliases && !frontChannelEndpoints.contains(endpointName)) {
+      final alias = mtlsEndpointAliases?.getEndpoint(endpointName);
+      if (alias != null) {
+        return alias;
+      }
+    }
+    return _conventionalEndpoint(endpointName);
+  }
+
+  /// The top-level endpoint for [endpointName]: the typed field when this class
+  /// has one (so a `copyWith`-overridden endpoint is honoured even though
+  /// `copyWith` keeps the original [src]), else the raw [src] value.
+  Uri? _conventionalEndpoint(String endpointName) => switch (endpointName) {
+    OidcConstants_ProviderMetadata.authorizationEndpoint =>
+      authorizationEndpoint,
+    OidcConstants_ProviderMetadata.tokenEndpoint => tokenEndpoint,
+    OidcConstants_ProviderMetadata.userinfoEndpoint => userinfoEndpoint,
+    OidcConstants_ProviderMetadata.jwksUri => jwksUri,
+    OidcConstants_ProviderMetadata.registrationEndpoint => registrationEndpoint,
+    OidcConstants_ProviderMetadata.checkSessionIframe => checkSessionIframe,
+    OidcConstants_ProviderMetadata.endSessionEndpoint => endSessionEndpoint,
+    OidcConstants_ProviderMetadata.revocationEndpoint => revocationEndpoint,
+    OidcConstants_ProviderMetadata.introspectionEndpoint =>
+      introspectionEndpoint,
+    OidcConstants_ProviderMetadata.pushedAuthorizationRequestEndpoint =>
+      pushedAuthorizationRequestEndpoint,
+    _ => OidcInternalUtilities.tryParseUri(src[endpointName]),
+  };
 }

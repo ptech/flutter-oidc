@@ -9,7 +9,6 @@ part of 'state.dart';
 OidcAuthorizeState _$OidcAuthorizeStateFromJson(Map<String, dynamic> json) =>
     OidcAuthorizeState(
       redirectUri: Uri.parse(json['redirect_uri'] as String),
-      codeVerifier: json['code_verifier'] as String?,
       codeChallenge: json['code_challenge'] as String?,
       originalUri: json['original_uri'] == null
           ? null
@@ -17,15 +16,20 @@ OidcAuthorizeState _$OidcAuthorizeStateFromJson(Map<String, dynamic> json) =>
       nonce: json['nonce'] as String,
       clientId: json['client_id'] as String,
       extraTokenParams: json['extraTokenParams'] as Map<String, dynamic>?,
-      extraTokenHeaders:
-          (json['extraTokenHeaders'] as Map<String, dynamic>?)?.map(
-        (k, e) => MapEntry(k, e as String),
-      ),
+      extraTokenHeaders: (json['extraTokenHeaders'] as Map<String, dynamic>?)
+          ?.map((k, e) => MapEntry(k, e as String)),
       options: json['options'] as Map<String, dynamic>?,
+      maxAge: _$JsonConverterFromJson<int, Duration>(
+        json['max_age'],
+        const OidcDurationSecondsConverter().fromJson,
+      ),
       id: json['id'] as String?,
       createdAt: _$JsonConverterFromJson<int, DateTime>(
-          json['created_at'], const OidcNumericDateConverter().fromJson),
+        json['created_at'],
+        const OidcNumericDateConverter().fromJson,
+      ),
       data: json['data'],
+      managerId: json['managerId'] as String?,
     );
 
 Map<String, dynamic> _$OidcAuthorizeStateToJson(OidcAuthorizeState instance) =>
@@ -33,20 +37,28 @@ Map<String, dynamic> _$OidcAuthorizeStateToJson(OidcAuthorizeState instance) =>
       'id': instance.id,
       'created_at': const OidcNumericDateConverter().toJson(instance.createdAt),
       'operationDiscriminator': instance.operationDiscriminator,
+      'managerId': instance.managerId,
       'data': instance.data,
       'extraTokenHeaders': instance.extraTokenHeaders,
       'extraTokenParams': instance.extraTokenParams,
       'options': instance.options,
       'code_challenge': instance.codeChallenge,
-      'code_verifier': instance.codeVerifier,
       'redirect_uri': instance.redirectUri.toString(),
       'client_id': instance.clientId,
       'original_uri': instance.originalUri?.toString(),
       'nonce': instance.nonce,
+      'max_age': _$JsonConverterToJson<int, Duration>(
+        instance.maxAge,
+        const OidcDurationSecondsConverter().toJson,
+      ),
     };
 
 Value? _$JsonConverterFromJson<Json, Value>(
   Object? json,
   Value? Function(Json json) fromJson,
-) =>
-    json == null ? null : fromJson(json as Json);
+) => json == null ? null : fromJson(json as Json);
+
+Json? _$JsonConverterToJson<Json, Value>(
+  Value? value,
+  Json? Function(Value value) toJson,
+) => value == null ? null : toJson(value);

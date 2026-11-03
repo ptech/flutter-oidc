@@ -1,3 +1,141 @@
+## 5.0.2
+
+ - **FIX**(ci): respect GitHub's 5-concurrent-macOS-jobs cap, un-shard macos. ([79e50312](https://github.com/Bdaya-Dev/oidc/commit/79e50312fe385d5cf27f1c304c2bf0ee989d2254))
+
+## 5.0.1
+
+ - Update a dependency to the latest release.
+
+## 5.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**(example): stop corrupting the web conformance POST through cors-proxy. ([4eea7cd8](https://github.com/Bdaya-Dev/oidc/commit/4eea7cd840c208582eaf873a0d34ce54e7e2a95e))
+ - **FIX**(oidc): rethrow platform OidcException from getPlatformEndSessionResponse unwrapped. ([ab422b70](https://github.com/Bdaya-Dev/oidc/commit/ab422b70d38093ab4e85a56176df78908780ba71))
+ - **FIX**: await futures returned inside try blocks (unawaited_return_in_try_block). ([452d6ee1](https://github.com/Bdaya-Dev/oidc/commit/452d6ee121674dee760f2d698f2a7d5565ad6600))
+ - **FIX**(example): register the RP's true application_type with the test plan. ([1253d9be](https://github.com/Bdaya-Dev/oidc/commit/1253d9be404bd36ed5d8f83521ce74efb3ca73f1))
+ - **FEAT**(oidc_core): mTLS transport, end-to-end alias routing and web guard ([#386](https://github.com/Bdaya-Dev/oidc/issues/386)). ([d3bd7213](https://github.com/Bdaya-Dev/oidc/commit/d3bd721399ddf579067791f12c536b2fb4022ad5))
+ - **FEAT**(oidc_core): adopt and persist RFC 7592 credential rotation through the manager ([#385](https://github.com/Bdaya-Dev/oidc/issues/385)). ([0b6f57c1](https://github.com/Bdaya-Dev/oidc/commit/0b6f57c199bc3d8b76bf05845b5a0b13c1d9bcd8))
+ - **BREAKING** **FIX**(oidc_core): reject a discovery document whose issuer does not match. ([fab65a06](https://github.com/Bdaya-Dev/oidc/commit/fab65a069d2b4bd4ac8d41fc78e6c194702f32b4))
+ - **BREAKING** **FEAT**(oidc_default_store): bump flutter_secure_storage to ^11 ([#451](https://github.com/Bdaya-Dev/oidc/issues/451)). ([166f394e](https://github.com/Bdaya-Dev/oidc/commit/166f394ed7d937f1098a558b92f325fc52043700))
+
+## 4.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**(example): keep the front-channel logout URI off Uri.base on native. ([be8a8968](https://github.com/Bdaya-Dev/oidc/commit/be8a896893bb78efcf7c9929368c2218a8d7e330))
+ - **FIX**(example): serve the web RP at a conformant https origin. ([e62500b0](https://github.com/Bdaya-Dev/oidc/commit/e62500b06442ddd2bda20c934d4c1843aedaf3c3))
+ - **FIX**(example): size the web per-test cap to the workload, not the reverse. ([932fb6ca](https://github.com/Bdaya-Dev/oidc/commit/932fb6caa9619af24ed37caf3ef31290b7a8eb57))
+ - **FIX**(example): web loses Hybrid/Implicit to a timeout budget, not a fragment bug. ([624a502e](https://github.com/Bdaya-Dev/oidc/commit/624a502e04ceae7ac26ec05f3d523fe1a870bd7a))
+ - **FIX**(example): gate Dynamic RP, which needs an RP-hosted request_uri. ([dda2caea](https://github.com/Bdaya-Dev/oidc/commit/dda2caea01f3a7e3bf89ac9c97a066aa72759bf1))
+ - **FIX**(example): gate the logout profiles the suite cannot run, and count logouts. ([bfa48dbd](https://github.com/Bdaya-Dev/oidc/commit/bfa48dbdfeac73da6ab9a46840fe3ce86761287b))
+ - **FIX**(example): let the suite supply Dynamic RP's module variant. ([05b0c847](https://github.com/Bdaya-Dev/oidc/commit/05b0c84730d198fd7795692d4e38165733190a06))
+ - **FIX**(example): resolve WebFinger after setup, and dump the plan on a 500. ([3406f070](https://github.com/Bdaya-Dev/oidc/commit/3406f0705e73bc6afe8d4be553d483259d8ab0f8))
+ - **FIX**(oidc_android): forward Map-valued raw intent extras instead of dropping them. ([7ffda6a7](https://github.com/Bdaya-Dev/oidc/commit/7ffda6a74f07aeaba3a077a1d879a615b3dfbe77))
+ - **FEAT**(oidc_core): manager-level dynamic client registration (RFC 7591). ([fe4b4c4e](https://github.com/Bdaya-Dev/oidc/commit/fe4b4c4e30b1c97db06407dc32f7d4b1106e21ca))
+ - **FEAT**(oidc_core): implement WebFinger issuer discovery (OIDC Discovery §2, RFC 7033). ([213657b8](https://github.com/Bdaya-Dev/oidc/commit/213657b8dad13d62a1c58d069c801cf26b995439))
+ - **FEAT**(oidc_core,oidc_web_core): bound the interactive web flow with flowTimeoutSeconds. ([7282efa0](https://github.com/Bdaya-Dev/oidc/commit/7282efa09d406fa3eb012688fbbc091836d8ba2e))
+ - **BREAKING** **FIX**(oidc_core): the REGISTERED token_endpoint_auth_method wins over the caller's. ([262bdfd4](https://github.com/Bdaya-Dev/oidc/commit/262bdfd4f0c1fac0f29c65be23bb3c061adb8310))
+ - **BREAKING** **FIX**(oidc_android): report the options the Auth Tab path cannot apply. ([8b7226ce](https://github.com/Bdaya-Dev/oidc/commit/8b7226ced748e953e8b3ea95ba3c711d8976dd8d))
+
+## 3.0.1
+
+ - Update a dependency to the latest release.
+
+## 3.0.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FIX**(oidc_android): restore the redirect receiver as a fallback capture path ([#418](https://github.com/Bdaya-Dev/oidc/issues/418)) ([#419](https://github.com/Bdaya-Dev/oidc/issues/419)). ([8df8bc61](https://github.com/Bdaya-Dev/oidc/commit/8df8bc617fb91347eac9f32fcffb7ec88f95328a))
+
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **FEAT**(oidc_web_core): status-driven redirect.html + app-ack wire ([#116](https://github.com/Bdaya-Dev/oidc/issues/116), [#227](https://github.com/Bdaya-Dev/oidc/issues/227), [#256](https://github.com/Bdaya-Dev/oidc/issues/256)) ([#397](https://github.com/Bdaya-Dev/oidc/issues/397)). ([3ea11929](https://github.com/Bdaya-Dev/oidc/commit/3ea119290f1007d62b9ecb8ffcaeb3a771f7df9f))
+ - **FEAT**(oidc_core): emit OidcTokenRefreshFailedEvent on refresh failures; clamp the expiring-refire loop ([#392](https://github.com/Bdaya-Dev/oidc/issues/392)). ([0b581dff](https://github.com/Bdaya-Dev/oidc/commit/0b581dffcc9761d9ee112aa0df6856a610c10ac5))
+ - **BREAKING** **FEAT**(oidc_core): cache-first init as the new default, discovery TTL cache, loaded-token validity controls ([#399](https://github.com/Bdaya-Dev/oidc/issues/399)). ([de3e2287](https://github.com/Bdaya-Dev/oidc/commit/de3e2287ec0649562e3df426f42a628168417378))
+
+## 1.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(oidc_darwin): implement flowTimeoutSeconds for the Apple ASWebAuthenticationSession flow. ([482f0186](https://github.com/Bdaya-Dev/oidc/commit/482f0186b8cdb37d309118de187e1c8496555d9a))
+ - **FIX**(example): add patrol RunnerUITests UI-testing target for iOS. ([21b740f6](https://github.com/Bdaya-Dev/oidc/commit/21b740f645be41a0792299660d2a96db26fb378a))
+ - **FIX**(example): wrap patrol conformance placeholder with SharedValue.wrapApp. ([831df91c](https://github.com/Bdaya-Dev/oidc/commit/831df91c7f041a96af10bf1c80ef92f49d45a2c8))
+ - **FIX**(example): use FlutterFragmentActivity for Auth Tab (ComponentActivity). ([e6e9be47](https://github.com/Bdaya-Dev/oidc/commit/e6e9be47683d80897a6dce6f92433408c89155f4))
+ - **FIX**: pre-v1 correctness — certification claim, license, Android queries, honest native option docs. ([3b8ef447](https://github.com/Bdaya-Dev/oidc/commit/3b8ef447f2a1c0af68ec6711c77d435531fb827f))
+ - **FIX**(spm,native): SwiftPM layout migration + conformance fixes; fix Android build. ([47f7bd25](https://github.com/Bdaya-Dev/oidc/commit/47f7bd25feb5d4b7a2e3db67165a44ecdf4dae29))
+ - **FIX**(native): harden iOS threading, simplify Android redirect to one-line setup. ([a7553f32](https://github.com/Bdaya-Dev/oidc/commit/a7553f326c1d67ac2bd057b0864688d73df24661))
+ - **FIX**: handle refresh responses without id_token. ([4af363be](https://github.com/Bdaya-Dev/oidc/commit/4af363bed630d18394b28af1664f334aca3df8d9))
+ - **FEAT**(observability): native browser events via the existing OidcEvent stream (Phase 3). ([91d1f5bd](https://github.com/Bdaya-Dev/oidc/commit/91d1f5bdfa1526aec170474181ec71ad1bf38c59))
+ - **BREAKING** **REFACTOR**: remove rxdart; adopt bdaya_shared_value ^5.0.0. ([0d65d7fd](https://github.com/Bdaya-Dev/oidc/commit/0d65d7fde062e2db7ffbdd31a47735c59954045a))
+ - **BREAKING** **FEAT**(oidc_core): remove the strictJwtVerification fail-open opt-out. ([ee2146f9](https://github.com/Bdaya-Dev/oidc/commit/ee2146f9fa966c352a7c751673550bdcb5e7c0a5))
+ - **BREAKING** **FEAT**(oidc_android): switch to Auth Tab only, remove Custom Tabs path. ([05bf0181](https://github.com/Bdaya-Dev/oidc/commit/05bf01811e299c472d49efb303fb657c939f0bd4))
+ - **BREAKING** **FEAT**(oidc_android): add flowTimeoutSeconds to fix headless CI hang. ([01c844f5](https://github.com/Bdaya-Dev/oidc/commit/01c844f5bd98a3d983b9e50f9fa2192ed7013e50))
+ - **BREAKING** **FEAT**: merge oidc_ios + oidc_macos into a unified oidc_darwin plugin. ([db73858e](https://github.com/Bdaya-Dev/oidc/commit/db73858e71b3b869326867b05b9d1ead3629acb9))
+ - **BREAKING** **FEAT**(options): redesign native options API (v1 clean break, no AppAuth framing). ([a78954fe](https://github.com/Bdaya-Dev/oidc/commit/a78954feb4c4c6dfb0abc15f7e0a308be74d4e95))
+ - **BREAKING** **FEAT**(oidc_macos): first-party ASWebAuthenticationSession; drop flutter_appauth. ([dc13f411](https://github.com/Bdaya-Dev/oidc/commit/dc13f411a3bfca4572a0f0e8fea2705365314d3c))
+ - **BREAKING** **FEAT**: consolidate jose_plus, crypto_keys_plus, x509_plus into the workspace. ([3fffc6cd](https://github.com/Bdaya-Dev/oidc/commit/3fffc6cd51f2abb0ead643acc2ec4d5741fac8e5))
+ - **BREAKING** **CHORE**: v1 dependency upgrade + drop the pigeon global-tool wrapper. ([45b62a3e](https://github.com/Bdaya-Dev/oidc/commit/45b62a3ef3f5b42cfb590111c9e37e144bbc11b0))
+
+## 0.14.0+2
+
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+
+## 0.14.0+1
+
+ - Update a dependency to the latest release.
+
+## 0.14.0
+
+> Note: This release has breaking changes.
+
+ - **FEAT**: improve offline mode integration tests with app startup handling. ([18a586c9](https://github.com/Bdaya-Dev/oidc/commit/18a586c933ddfdbf416510e95c63281d3401bedc))
+ - **FEAT**: update dependencies and enhance offline mode test handling. ([a57d6490](https://github.com/Bdaya-Dev/oidc/commit/a57d64906bef50ac362bea16045ea6ba98f7b3f0))
+ - **FEAT**: enhance offline mode handling in tests and user manager. ([e0cae79a](https://github.com/Bdaya-Dev/oidc/commit/e0cae79adf3fa8ccf18a530dbdda7cc339a75c0d))
+ - **BREAKING** **FEAT**(oidc_default_store): use flutter_secure_storage. ([a9441511](https://github.com/Bdaya-Dev/oidc/commit/a9441511a9f27aa742cde2459b0654541b0aa356))
+ - **BREAKING** **FEAT**: Add offline mode events and error handling. ([7479fd15](https://github.com/Bdaya-Dev/oidc/commit/7479fd15cf0029e9b865333709a98363b5119d64))
+
+## 0.13.0
+
+> Note: This release has breaking changes.
+
+ - **FEAT**: add OIDC conformance test suite with API client and test runner. ([a651a7d8](https://github.com/Bdaya-Dev/oidc/commit/a651a7d814a424683d141fcc66156e5d17112baa))
+ - **BREAKING** **FIX**: hasInit is set to true too early in init() of OidcUserManagerBase ([#275](https://github.com/Bdaya-Dev/oidc/issues/275)). ([d704aa5f](https://github.com/Bdaya-Dev/oidc/commit/d704aa5fe7449051831fc062919712a1c5075a13))
+ - **BREAKING** **FIX**: migrate to simple_secure_storage ([#270](https://github.com/Bdaya-Dev/oidc/issues/270)). ([723560a7](https://github.com/Bdaya-Dev/oidc/commit/723560a7e7d212290205724d7af6799f217ab778))
+ - **BREAKING** **FEAT**: Support WASM ([#253](https://github.com/Bdaya-Dev/oidc/issues/253)). ([8b2931ef](https://github.com/Bdaya-Dev/oidc/commit/8b2931ef64c7b25609db563e3d14bf37f5504922))
+
+## 0.12.1+2
+
+ - **DOCS**: Add openid certification mark ([#240](https://github.com/Bdaya-Dev/oidc/issues/240)). ([89313199](https://github.com/Bdaya-Dev/oidc/commit/8931319937b9c263abae9ac873433dd6bd5fa637))
+
+## 0.12.1+1
+
+ - Update a dependency to the latest release.
+
+## 0.12.1
+
+ - **FEAT**: update changelogs to reflect breaking changes and new features for multiple OIDC platforms. ([4caca121](https://github.com/Bdaya-Dev/oidc/commit/4caca121f63fd21d71aaffa2730b092fc26a7da5))
+
+## 0.12.0
+  - **TESTS**: Added integration tests to run the official oidc conformance suite, this pumps our test coverage from 22% to almost 45%, effectively doubling it!
+    - Tests are run on ALL platforms (linux, macos, windows, android, ios, web).
+    - Tests check the authorization code flow only for now.
+  - **BREAKING** **FEAT**: Support for multiple `OidcUserManager` instances, by adding the `id` field to differentiate them.
+    - [See docs entry](https://bdaya-dev.github.io/oidc/oidc-usage/#constructing-multiple-user-managers)
+  - **FEAT**: Updated the example app to use the new `OidcUserManager.id`, with the ability to add your own custom managers in the UI.
+  
+  > [!IMPORTANT]
+  > We have also officially submitted our package to the openid foundation for [certification](https://github.com/Bdaya-Dev/oidc/issues/11).
+  
+## 0.11.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: support hooks ([#228](https://github.com/Bdaya-Dev/oidc/issues/228)). ([f2d9d9c6](https://github.com/Bdaya-Dev/oidc/commit/f2d9d9c692e0cf0baac36f186be337ff62e142df))
+
 ## 0.10.0
 
 > Note: This release has breaking changes.

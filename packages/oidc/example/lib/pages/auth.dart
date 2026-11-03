@@ -21,8 +21,7 @@ class _AuthPageState extends State<AuthPage> {
       OidcPlatformSpecificOptions_Web_NavigationMode.newPage;
 
   bool allowInsecureConnections = false;
-  OidcAppAuthExternalUserAgent externalUserAgent =
-      OidcAppAuthExternalUserAgent.asWebAuthenticationSession;
+  bool prefersEphemeral = false;
 
   OidcPlatformSpecificOptions _getOptions() {
     return OidcPlatformSpecificOptions(
@@ -31,15 +30,14 @@ class _AuthPageState extends State<AuthPage> {
         popupHeight: 800,
         popupWidth: 730,
       ),
-      // these settings are from https://pub.dev/packages/flutter_appauth.
-      android: OidcPlatformSpecificOptions_AppAuth_Android(
+      android: OidcNativeOptionsAndroid(
         allowInsecureConnections: allowInsecureConnections,
       ),
-      ios: OidcPlatformSpecificOptions_AppAuth_IosMacos(
-        externalUserAgent: externalUserAgent,
+      ios: OidcNativeOptionsApple(
+        prefersEphemeralWebBrowserSession: prefersEphemeral,
       ),
-      macos: OidcPlatformSpecificOptions_AppAuth_IosMacos(
-        externalUserAgent: externalUserAgent,
+      macos: OidcNativeOptionsApple(
+        prefersEphemeralWebBrowserSession: prefersEphemeral,
       ),
       windows: const OidcPlatformSpecificOptions_Native(),
     );
@@ -48,15 +46,15 @@ class _AuthPageState extends State<AuthPage> {
   @override
   Widget build(BuildContext context) {
     //remember, you can only enter this route if there is no user.
+    final manager = app_state.currentManagerRx.of(context);
     final currentRoute = GoRouterState.of(context);
     final originalUri =
         currentRoute.uri.queryParameters[OidcConstants_Store.originalUri];
-    final parsedOriginalUri =
-        originalUri == null ? null : Uri.tryParse(originalUri);
+    final parsedOriginalUri = originalUri == null
+        ? null
+        : Uri.tryParse(originalUri);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Auth page'),
-      ),
+      appBar: AppBar(title: const Text('Auth page')),
       body: Padding(
         padding: const EdgeInsets.all(8),
         child: ListView(
@@ -64,22 +62,18 @@ class _AuthPageState extends State<AuthPage> {
             const Text('Resource owner grant'),
             TextField(
               controller: userNameController,
-              decoration: const InputDecoration(
-                labelText: 'username',
-              ),
+              decoration: const InputDecoration(labelText: 'username'),
             ),
             TextField(
               controller: passwordController,
-              decoration: const InputDecoration(
-                labelText: 'password',
-              ),
+              decoration: const InputDecoration(labelText: 'password'),
             ),
             const SizedBox(height: 8),
             ElevatedButton(
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 try {
-                  final result = await app_state.currentManager.loginPassword(
+                  final result = await manager.loginPassword(
                     username: userNameController.text,
                     password: passwordController.text,
                   );
@@ -94,11 +88,7 @@ class _AuthPageState extends State<AuthPage> {
                 } catch (e) {
                   app_state.exampleLogger.severe(e.toString());
                   messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'loginPassword failed!',
-                      ),
-                    ),
+                    const SnackBar(content: Text('loginPassword failed!')),
                   );
                 }
               },
@@ -112,12 +102,7 @@ class _AuthPageState extends State<AuthPage> {
               ),
               DropdownButton<OidcPlatformSpecificOptions_Web_NavigationMode>(
                 items: OidcPlatformSpecificOptions_Web_NavigationMode.values
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e.name),
-                      ),
-                    )
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
                     .toList(),
                 value: webNavigationMode,
                 onChanged: (value) {
@@ -135,8 +120,7 @@ class _AuthPageState extends State<AuthPage> {
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 try {
-                  final result =
-                      await app_state.currentManager.loginAuthorizationCodeFlow(
+                  final result = await manager.loginAuthorizationCodeFlow(
                     originalUri: parsedOriginalUri ?? Uri.parse('/'),
                     //store any arbitrary data, here we store the authorization
                     //start time.
@@ -177,7 +161,7 @@ class _AuthPageState extends State<AuthPage> {
                 final messenger = ScaffoldMessenger.of(context);
 
                 // ignore: deprecated_member_use
-                final result = await app_state.currentManager.loginImplicitFlow(
+                final result = await manager.loginImplicitFlow(
                   responseType: OidcConstants_AuthorizationEndpoint_ResponseType
                       .idToken_Token,
                   originalUri: parsedOriginalUri ?? Uri.parse('/'),

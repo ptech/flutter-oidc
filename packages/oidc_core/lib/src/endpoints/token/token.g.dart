@@ -7,15 +7,14 @@ part of 'token.dart';
 // **************************************************************************
 
 OidcToken _$OidcTokenFromJson(Map<String, dynamic> json) {
-  $checkKeys(
-    json,
-    disallowNullValues: const ['expiresInReferenceDate'],
-  );
+  $checkKeys(json, disallowNullValues: const ['expiresInReferenceDate']);
   return OidcToken(
     creationTime: OidcInternalUtilities.dateTimeFromJsonRequired(
-        json['expiresInReferenceDate']),
-    scope:
-        OidcInternalUtilities.splitSpaceDelimitedStringNullable(json['scope']),
+      json['expiresInReferenceDate'],
+    ),
+    scope: OidcInternalUtilities.splitSpaceDelimitedStringNullable(
+      json['scope'],
+    ),
     accessToken: json['access_token'] as String?,
     tokenType: json['token_type'] as String?,
     idToken: json['id_token'] as String?,
@@ -38,18 +37,14 @@ const _$OidcTokenFieldMap = <String, String>{
 };
 
 Map<String, dynamic> _$OidcTokenToJson(OidcToken instance) => <String, dynamic>{
-      if (OidcInternalUtilities.joinSpaceDelimitedList(instance.scope)
-          case final value?)
-        'scope': value,
-      if (instance.accessToken case final value?) 'access_token': value,
-      if (instance.tokenType case final value?) 'token_type': value,
-      if (instance.idToken case final value?) 'id_token': value,
-      if (OidcInternalUtilities.durationToJson(instance.expiresIn)
-          case final value?)
-        'expires_in': value,
-      if (instance.refreshToken case final value?) 'refresh_token': value,
-      if (OidcInternalUtilities.dateTimeToJson(instance.creationTime)
-          case final value?)
-        'expiresInReferenceDate': value,
-      if (instance.sessionState case final value?) 'session_state': value,
-    };
+  'scope': ?OidcInternalUtilities.joinSpaceDelimitedList(instance.scope),
+  'access_token': ?instance.accessToken,
+  'token_type': ?instance.tokenType,
+  'id_token': ?instance.idToken,
+  'expires_in': ?OidcInternalUtilities.durationToJson(instance.expiresIn),
+  'refresh_token': ?instance.refreshToken,
+  'expiresInReferenceDate': ?OidcInternalUtilities.dateTimeToJson(
+    instance.creationTime,
+  ),
+  'session_state': ?instance.sessionState,
+};

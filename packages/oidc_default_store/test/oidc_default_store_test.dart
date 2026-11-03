@@ -5,25 +5,76 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:oidc_core/oidc_core.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   group('OidcDefaultStore', () {
     setUp(() {
-      FlutterSecureStorage.setMockInitialValues({});
+      // The default (non-injected) backend is now SharedPreferencesAsync, so
+      // register an in-memory async platform alongside the legacy mock.
       SharedPreferences.setMockInitialValues({});
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty();
     });
     test('can be instantiated', () {
       expect(OidcDefaultStore(), isNotNull);
     });
 
+    testWidgets(
+      'per-managerId key index survives multiple writes (register reads the '
+      'managerId bucket, not the null bucket)',
+      (tester) async {
+        final store = OidcDefaultStore();
+        await store.init();
+        const ns = OidcStoreNamespace.state;
+        const managerId = 'mgrA';
+        await store.setMany(ns, values: {'k1': 'v1'}, managerId: managerId);
+        // A SEPARATE write for the SAME manager must not drop the previously
+        // registered key. Before the fix, _registerKeyForNamespace read the
+        // default (null) bucket instead of the managerId bucket, so this second
+        // write overwrote the index with just {k2}, orphaning k1.
+        await store.setMany(ns, values: {'k2': 'v2'}, managerId: managerId);
+        final keys = await store.getAllKeys(ns, managerId: managerId);
+        expect(keys, containsAll(<String>['k1', 'k2']));
+      },
+    );
+
+    test('recommended secure-storage options expose the hardened posture', () {
+      // iOS/macOS: MSAL-style first_unlock_this_device, never iCloud-synced.
+      expect(
+        OidcDefaultStore.recommendedIOSOptions.accessibility,
+        KeychainAccessibility.first_unlock_this_device,
+      );
+      expect(OidcDefaultStore.recommendedIOSOptions.synchronizable, isFalse);
+      expect(
+        OidcDefaultStore.recommendedMacOsOptions.accessibility,
+        KeychainAccessibility.first_unlock_this_device,
+      );
+      expect(OidcDefaultStore.recommendedMacOsOptions.synchronizable, isFalse);
+
+      final secure = OidcDefaultStore.createHardenedSecureStorage();
+      expect(secure, isA<FlutterSecureStorage>());
+      expect(
+        secure.iOptions.accessibility,
+        KeychainAccessibility.first_unlock_this_device,
+      );
+      expect(
+        secure.mOptions.accessibility,
+        KeychainAccessibility.first_unlock_this_device,
+      );
+
+      // Passing the hardened instance must not break construction.
+      expect(OidcDefaultStore(secureStorageInstance: secure), isNotNull);
+    });
+
     final storeConfigs = [
       OidcDefaultStore(),
-      OidcDefaultStore()..testIsWeb = true,
       OidcDefaultStore(
         webSessionManagementLocation:
             OidcDefaultStoreWebSessionManagementLocation.localStorage,
-      )..testIsWeb = true,
+      ),
     ];
     for (final store in storeConfigs) {
       testWidgets('Full test', (widgetTester) async {
@@ -32,23 +83,19 @@ void main() {
         expect(store.didInit, false);
         await store.init();
         expect(store.didInit, true);
-        const goldenValues = {
-          'k1': 'v1',
-          'k2': 'v2',
-        };
+        const goldenValues = {'k1': 'v1', 'k2': 'v2'};
         for (final namespace in OidcStoreNamespace.values) {
           var allKeys = await store.getAllKeys(namespace);
           expect(allKeys, isEmpty);
 
-          await store.setMany(
-            namespace,
-            values: goldenValues,
-          );
+          await store.setMany(namespace, values: goldenValues);
           allKeys = await store.getAllKeys(namespace);
           expect(allKeys, goldenValues.keys);
 
-          var allValues =
-              await store.getMany(namespace, keys: {...allKeys, 'k3'});
+          var allValues = await store.getMany(
+            namespace,
+            keys: {...allKeys, 'k3'},
+          );
           expect(allValues, allOf(hasLength(2), equals(goldenValues)));
 
           //test single entry methods.

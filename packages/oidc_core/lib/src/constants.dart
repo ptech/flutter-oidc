@@ -1,5 +1,5 @@
 // coverage:ignore-file
-// ignore_for_file: camel_case_types, lines_longer_than_80_chars
+// ignore_for_file: camel_case_types
 //==========================================================================================================
 // This file was collected from https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml  ||
 //==========================================================================================================
@@ -27,12 +27,62 @@ class OidcConstants_AccessTokenTypes {
   static const dPoP = 'DPoP';
 }
 
+/// RFC 8693 Token Exchange token type identifiers, used for
+/// `subject_token_type` / `actor_token_type` / `requested_token_type`.
+class OidcConstants_TokenExchange_TokenType {
+  /// Indicates that the token is an OAuth 2.0 access token.
+  static const accessToken = 'urn:ietf:params:oauth:token-type:access_token';
+
+  /// Indicates that the token is an OAuth 2.0 refresh token.
+  static const refreshToken = 'urn:ietf:params:oauth:token-type:refresh_token';
+
+  /// Indicates that the token is an OpenID Connect ID Token.
+  static const idToken = 'urn:ietf:params:oauth:token-type:id_token';
+
+  /// Indicates that the token is a base64url-encoded SAML 1.1 assertion.
+  static const saml1 = 'urn:ietf:params:oauth:token-type:saml1';
+
+  /// Indicates that the token is a base64url-encoded SAML 2.0 assertion.
+  static const saml2 = 'urn:ietf:params:oauth:token-type:saml2';
+
+  /// Indicates that the token is a JWT.
+  static const jwt = 'urn:ietf:params:oauth:token-type:jwt';
+}
+
 class OidcConstants_ClientAuthenticationMethods {
   static const clientSecretBasic = 'client_secret_basic';
   static const clientSecretPost = 'client_secret_post';
   static const clientSecretJwt = 'client_secret_jwt';
   static const privateKeyJwt = 'private_key_jwt';
   static const none = 'none';
+
+  /// RFC 8705 §2.1: mutual-TLS client authentication using the PKI method (the
+  /// client certificate is validated against a configured
+  /// subject/SAN and a trusted CA chain).
+  static const tlsClientAuth = 'tls_client_auth';
+
+  /// RFC 8705 §2.2: mutual-TLS client authentication using a self-signed
+  /// certificate (the client certificate is matched against a registered
+  /// public key, e.g. via `jwks`/`jwks_uri`).
+  static const selfSignedTlsClientAuth = 'self_signed_tls_client_auth';
+}
+
+/// OpenID Connect Dynamic Client Registration 1.0 §2 `application_type`.
+///
+/// The value constrains which `redirect_uris` the client may register, so it
+/// follows from the uris rather than from the host platform.
+class OidcConstants_ApplicationType {
+  /// The default when `application_type` is omitted. Such a client "MUST only
+  /// register URLs using the `https` scheme as `redirect_uris`; they MUST NOT
+  /// use `localhost` as the hostname".
+  ///
+  /// This is the correct value for a mobile app whose redirect is an
+  /// https App Link / Universal Link, not just for browser apps.
+  static const web = 'web';
+
+  /// A client that "MUST only register `redirect_uris` using custom URI schemes
+  /// or loopback URLs using the `http` scheme".
+  static const native = 'native';
 }
 
 class OidcConstants_ClientAssertionTypes {
@@ -61,6 +111,32 @@ class OidcConstants_GrantType {
   static const String umaTicket = 'urn:ietf:params:oauth:grant-type:uma-ticket';
 }
 
+/// RFC 8628 (OAuth 2.0 Device Authorization Grant) error codes.
+///
+/// These are returned from the token endpoint while polling.
+class OidcConstants_DeviceAuthorizationErrors {
+  /// The user hasn't finished authorization yet.
+  static const authorizationPending = 'authorization_pending';
+
+  /// Same as [authorizationPending], but polling must slow down.
+  static const slowDown = 'slow_down';
+
+  /// The user denied the authorization request.
+  static const accessDenied = 'access_denied';
+
+  /// The device_code has expired.
+  static const expiredToken = 'expired_token';
+}
+
+/// RFC 8628 polling defaults.
+class OidcConstants_DeviceAuthorizationPolling {
+  /// RFC 8628 Section 3.5: default polling interval if the server omits it.
+  static const defaultInterval = Duration(seconds: 5);
+
+  /// RFC 8628 Section 3.5: required increase when receiving `slow_down`.
+  static const slowDownIncrement = Duration(seconds: 5);
+}
+
 class OidcConstants_Scopes {
   static const openid = 'openid';
   static const profile = 'profile';
@@ -72,6 +148,14 @@ class OidcConstants_Scopes {
 class OidcConstants_JWTClaims {
   ///	Session ID
   static const sid = 'sid';
+
+  /// The `events` claim of a Back-Channel Logout 1.0 §2.4 Logout Token.
+  static const events = 'events';
+
+  /// The REQUIRED `events` object member URI per OpenID Connect Back-Channel
+  /// Logout 1.0 §2.4.
+  static const backchannelLogoutEvent =
+      'http://schemas.openid.net/event/backchannel-logout';
 
   /// Used for aggregated claims.
   static const jwt = 'JWT';
@@ -194,6 +278,9 @@ class OidcConstants_AuthParameters {
 
   /// authorization request
   static const requestUri = 'request_uri';
+
+  /// JWT Secured Authorization Response (JARM): the signed `response` JWT.
+  static const response = 'response';
 
   /// authorization response, access token response
   static const idToken = 'id_token';
@@ -321,6 +408,30 @@ class OidcConstants_AuthParameters {
 
   /// authorization request
   static const dpopJkt = 'dpop_jkt';
+}
+
+/// The token type hints defined by the spec
+class OidcConstants_RevocationParameters_TokenType {
+  /// access token
+  static const String accessToken = 'access_token';
+
+  /// refresh token
+  static const String refreshToken = 'refresh_token';
+
+  /// id token
+  static const String idToken = 'id_token';
+}
+
+/// The parameters used in the revocation endpoint
+class OidcConstants_RevocationParameters {
+  /// token to be revoked
+  static const String token = 'token';
+
+  /// type of token to be revoked
+  static const String tokenTypeHint = 'token_type_hint';
+
+  /// callback URL to be called after revocation
+  static const String callback = 'callback';
 }
 
 class OidcConstants_ProviderMetadata {
@@ -525,6 +636,10 @@ class OidcConstants_ProviderMetadata {
   ///Boolean value specifying whether the OP supports HTTP-based logout, with true indicating support
   static const frontchannelLogoutSupported = 'frontchannel_logout_supported';
 
+  ///Boolean value specifying whether the OP can pass a sid (session ID) Claim in the Logout Token to identify the RP session with the OP, when front-channel logout is supported
+  static const frontchannelLogoutSessionSupported =
+      'frontchannel_logout_session_supported';
+
   ///Boolean value specifying whether the OP supports back-channel logout, with true indicating support
   static const backchannelLogoutSupported = 'backchannel_logout_supported';
 
@@ -560,6 +675,69 @@ class OidcConstants_ProviderMetadata {
       'dpop_signing_alg_values_supported';
 }
 
+/// OpenID Connect Discovery 1.0 §2 (OpenID Provider Issuer Discovery) +
+/// RFC 7033 (WebFinger) protocol constants.
+class OidcConstants_WebFinger {
+  /// RFC 7033 §4: the well-known path MUST be `/.well-known/webfinger`.
+  static const wellKnownPathSegments = <String>['.well-known', 'webfinger'];
+
+  /// RFC 7033 §4.1 REQUIRED query parameter carrying the normalized Resource.
+  static const resource = 'resource';
+
+  /// RFC 7033 §4.1/§4.3 OPTIONAL, repeatable link-relation-type filter.
+  static const rel = 'rel';
+
+  /// OIDC Discovery 1.0 §2 `host` WebFinger parameter. Conveyed as the request
+  /// URL authority / HTTP `Host` header, NOT as a query parameter.
+  static const host = 'host';
+
+  /// OIDC Discovery 1.0 §2 "OpenID Connect Issuer" rel type. The literal `http`
+  /// scheme is correct: this is an identifier, never a fetched URL.
+  static const relOpenIdIssuer = 'http://openid.net/specs/connect/1.0/issuer';
+
+  /// RFC 7033 §4.2/§10.2 JSON Resource Descriptor media type.
+  static const jrdContentType = 'application/jrd+json';
+
+  /// RFC 7565 `acct` URI scheme, assumed by OIDC Discovery §2.1.2 rule 2.
+  static const acctScheme = 'acct';
+
+  /// The scheme assumed by OIDC Discovery §2.1.2 rule 3.
+  static const httpsScheme = 'https';
+}
+
+/// RFC 7033 §4.4 JSON Resource Descriptor (JRD) top-level member names.
+class OidcConstants_WebFinger_JRD {
+  /// §4.4.1 — the URI of the entity the JRD describes.
+  static const subject = 'subject';
+
+  /// §4.4.2 — alternative identifiers for the [subject].
+  static const aliases = 'aliases';
+
+  /// §4.4.3 — additional information about the [subject].
+  static const properties = 'properties';
+
+  /// §4.4.4 — the array of link relation objects.
+  static const links = 'links';
+}
+
+/// RFC 7033 §4.4.4 link-relation-object member names.
+class OidcConstants_WebFinger_Link {
+  /// §4.4.4.1 — the link's relation type; the only REQUIRED member.
+  static const rel = 'rel';
+
+  /// §4.4.4.2 — the media type of the target resource.
+  static const type = 'type';
+
+  /// §4.4.4.3 — the target URI.
+  static const href = 'href';
+
+  /// §4.4.4.4 — human-readable titles, keyed by language tag.
+  static const titles = 'titles';
+
+  /// §4.4.4.5 — additional information about the link relation.
+  static const properties = 'properties';
+}
+
 class OidcConstants_AuthorizeRequest_ResponseMode {
   /// query
   static const String query = 'query';
@@ -577,7 +755,6 @@ class OidcConstants_AuthorizeRequest_ResponseMode {
 /// The response_type options defined by the spec
 class OidcConstants_AuthorizationEndpoint_ResponseType {
   /// `id_token token`, used for the implicit flow
-  // ignore: constant_identifier_names
   static const idToken_Token = <String>[idToken, token];
 
   /// Authorization Code Flow
@@ -668,6 +845,13 @@ class OidcConstants_AuthorizeRequest_CodeChallengeMethod {
 class OidcConstants_Store {
   static const expiresAt = 'expiresAt';
   static const expiresInReferenceDate = 'expiresInReferenceDate';
+
+  /// Key in a stored token's extra fields that records that its id_token was
+  /// kept from an earlier response (read by
+  /// `OidcToken.idTokenRetainedFromPriorResponse`). The name predates that
+  /// getter and is kept so sessions persisted by earlier versions still read
+  /// correctly.
+  static const allowExpiredIdToken = 'allowExpiredIdToken';
   static const currentUserAttributes = 'userAttributes';
   static const currentUserInfo = 'userInfo';
   static const originalUri = 'original_uri';
@@ -680,6 +864,9 @@ class OidcConstants_Store {
 
   static const requestType = 'requestType';
   static const frontChannelLogout = 'front-channel-logout';
+
+  static const managerId = 'managerId';
+
   // static const latestToken = 'latest';
   // static const idToken = 'id_token';
   // static const accessToken = 'access_token';
@@ -701,4 +888,10 @@ class OidcConstants_RequestMethod {
 
   /// POST http method
   static const post = 'POST';
+
+  /// PUT http method
+  static const put = 'PUT';
+
+  /// DELETE http method
+  static const delete = 'DELETE';
 }

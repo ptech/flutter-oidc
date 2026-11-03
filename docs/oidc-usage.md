@@ -6,9 +6,7 @@ all the classes that are exposed by this plugin start with `Oidc*`.
 
 ### Construction
 
-The main class this plugin provides, as the name suggests, it manages the current user session.
-
-> NOTE: you should only maintain a single instance of this class in your app.
+`OidcUserManager` is the main class this plugin provides, as the name suggests, it manages the current user session.
 
 you have two ways to construct it, depending on the availability of the [Discovery Document](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig).
 
@@ -39,6 +37,23 @@ you have two ways to construct it, depending on the availability of the [Discove
     ```
 
 aside from the discovery document, both constructors share the same parameters:
+
+#### Constructing multiple user managers
+
+If you want to support multiple identity providers, you can construct multiple `OidcUserManager` instances, each with its own discovery document and `id`.
+
+```dart
+final googleManager = OidcUserManager.lazy(
+    id: 'google',
+    discoveryDocumentUri: Uri.parse('https://accounts.google.com/.well-known/openid-configuration'),
+    //...other parameters.
+);
+final microsoftManager = OidcUserManager.lazy(
+    id: 'microsoft',
+    discoveryDocumentUri: Uri.parse('https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration'),
+    //...other parameters.
+);
+```
 
 #### clientCredentials
 
@@ -81,6 +96,41 @@ an `OidcClientAuthentication` describes [how the client authenticates with the i
 how you create/obtain the jwt is outside the scope of this package.
 you can use [![package:jose_plus][jose_plus_image]][jose_plus_link] to help you.
 
+6. `.tlsClientAuth` / `.selfSignedTlsClientAuth`: mutual-TLS client authentication ([RFC 8705](https://www.rfc-editor.org/rfc/rfc8705)), using a CA-issued (§2.1) or a self-signed (§2.2) client certificate. Only `client_id` goes into the request; the proof is the certificate on the TLS connection.
+
+    The certificate lives in the **transport**, never in `OidcClientAuthentication`. Build a cert-bearing client with `OidcMtls.createHttpClient` and pass it as the manager's [`httpClient`](#httpclient):
+
+    ```dart
+    final mtlsClient = OidcMtls.createHttpClient(
+      certificate: OidcMtlsClientCertificate(
+        certificateChain: File('client.pem').readAsBytesSync(), // leaf first
+        privateKey: File('client.key').readAsBytesSync(),
+        // password: '...', // for an encrypted key / PKCS#12 bundle
+      ),
+      // Optional: trust a private CA for the SERVER's certificate.
+      // trustedCertificates: File('ca.pem').readAsBytesSync(),
+    );
+
+    final manager = OidcUserManager.lazy(
+      discoveryDocumentUri: discoveryUri,
+      clientCredentials: const OidcClientAuthentication.tlsClientAuth(
+        clientId: 'my_client_id',
+      ),
+      httpClient: mtlsClient,
+      store: OidcDefaultStore(),
+      settings: OidcUserManagerSettings(
+        redirectUri: redirectUri,
+        // Use the provider's `mtls_endpoint_aliases` when it publishes them.
+        useMtlsEndpointAliases: true,
+      ),
+    );
+    ```
+
+    - **Endpoint aliases (RFC 8705 §5).** With `useMtlsEndpointAliases: true`, every request the client makes directly to the provider — token (all grants), UserInfo, revocation, introspection, PAR, device authorization and dynamic client registration — goes to the alias in `mtls_endpoint_aliases` when the provider publishes one, and to the normal endpoint otherwise. The setting is opt-in and never inferred from the auth method. The authorization, end-session and check-session endpoints are visited by the browser, not called by the client, so their aliases are ignored as §5 requires. `jwks_uri` always uses the top-level value: it is a public read that needs no client certificate.
+    - **Certificate-bound access tokens (RFC 8705 §3).** The RP has two jobs here: present the certificate at the token endpoint, and present the same certificate when it uses the token. Because the manager sends UserInfo through the same `httpClient`, that is already covered. Call your resource servers with the same `mtlsClient` as well. Checking the token's `cnf` / `x5t#S256` is the resource server's job, not this library's.
+    - **Dynamic client registration.** A registration response with `token_endpoint_auth_method` set to `tls_client_auth` or `self_signed_tls_client_auth` becomes the matching mTLS credentials. The certificate still comes from `httpClient`.
+    - **Platforms.** VM, Android, iOS, macOS, Windows and Linux are supported through `dart:io`'s `SecurityContext`. If you already have a `SecurityContext`, you can pass `IOClient(HttpClient(context: context))` directly. **Web is not supported:** browsers give `fetch`/XHR no way to present a client certificate. On web, `OidcMtls.isSupported` is `false`, `OidcMtls.createHttpClient` throws an `UnsupportedError`, and `init()` throws an `UnsupportedError` before any network call when the manager is configured with an mTLS method (or a registration hands it one).
+
 
 #### store
 
@@ -100,10 +150,31 @@ settings to control the behavior of the instance.
         Enabling offline auth can be a security risk, as it allows the app to keep tokens that are no longer valid.
         And it may open up unexpected attack vectors.
 
-- `bool strictJwtVerification = false`: whether JWTs are strictly verified.
+    !!! Tip
+        For detailed information about offline authentication, including security best practices, error handling, and implementation examples, see the [Offline Authentication Guide](oidc-offline-auth.md).
+
+- ID-token (and signed UserInfo / signed discovery `signed_metadata`) signature
+  verification is **always strict** (fail-closed): a token/response whose
+  signature cannot be verified is rejected. There is no opt-out setting.
+
+    !!! Info "Key rotation"
+        A `kid` that isn't in the currently-cached JWKS (e.g. right after the
+        OP rotates its signing keys) triggers one rate-limited, cache-busting
+        JWKS refetch before failing, so a routine key rotation does not cause
+        spurious login failures.
+
+    !!! Warning "HS256 id_tokens (e.g. Auth0's default client signing algorithm)"
+        Some OPs (Auth0 in particular, for confidential clients by default)
+        sign id_tokens with `HS256`, a symmetric algorithm keyed by your
+        `client_secret` rather than a JWKS-published public key. Verifying
+        these requires passing `clientSecret` on your
+        `OidcClientAuthentication` — the manager registers it as the HS256
+        verification key during `init()`. Without a `clientSecret`, an
+        HS256-signed id_token cannot be verified and login will fail-closed.
 - `Uri redirectUri`: the redirect uri that was configured with the provider.
 - `Uri? postLogoutRedirectUri`: the post logout redirect uri that was configured with the provider.
 - `Uri? frontChannelLogoutUri`: the uri of the front channel logout flow. this Uri MUST be registered with the OP first. the OP will call this Uri when it wants to logout the user.
+- `Future<String?> Function(OidcToken token) getIdToken`: pass this function to control how an idToken is fetched from a token response. This can be used to trick the user manager into using a JWT `access_token` as an `id_token` for example. 
 - `frontChannelRequestListeningOptions`: the options to use when listening for front channel logout requests.
     ```dart
     frontChannelRequestListeningOptions: OidcFrontChannelRequestListeningOptions(
@@ -130,8 +201,9 @@ settings to control the behavior of the instance.
 
 - `OidcSessionManagementSettings sessionManagementSettings`: contains settings for the session management spec:
     - `bool enabled`: (default false) whether to enable checking the session.
-    - `Duration interval`: (default 5 minutes) how often to check the current user session.
+    - `Duration interval`: (default 5 seconds) how often to check the current user session.
     - `bool stopIfErrorReceived`: (default true) whether to stop checking the current user session if the OP sends an `error` message.
+    - `Duration endSessionConfirmationTimeout`: (default 10 seconds) how long the one-off post-logout `check_session_iframe` probe waits for the OP's answer before reporting `timedOut` (see [Confirming logout at the OP](#confirming-logout-at-the-op-session-management)). It never delays logout itself.
 
 - `OidcPlatformSpecificOptions? options`: platform specific options to control auth requests:
     - `bool allowInsecureConnections`: Whether to allow non-HTTPS endpoints; for `android` 🤖 platform only.
@@ -179,6 +251,70 @@ settings to control the behavior of the instance.
         - `String broadcastChannel`: The broadcast channel to use when receiving messages from the browser; defaults to: `oidc_flutter_web/redirect`
 > Note: This MUST be the same as the one in your  [redirect.html](oidc-getting-started.md/#web) page.
 
+##### Hooks
+
+`OidcUserManagerHooks? hooks`: a set of hooks that allow you to customize the behavior of the user manager.
+
+- All hooks inherit `OidcHookMixin<TRequest, TResponse>`, which is just a marker mixin.
+- By default, we support the following hooks:
+    - `token`: to hook into the token request and response.
+    - `authorization`: to hook into the authorization request and response.
+
+To define a hook you can either extend `OidcHookBase`, or use the `OidcHook` class directly.
+
+###### Example: 
+
+To remove the scope from the `refresh_token` request, you can define a hook like this:
+
+```dart
+OidcUserManagerSettings(
+  hooks: OidcUserManagerHooks(
+    token:  OidcHook(
+      modifyRequest: (request) {
+        if (request.request.grantType == 'refresh_token') {
+          // Remove the scope from refresh_token requests
+          request.request.scope = null;
+        }
+        return Future.value(request);
+      },
+    ),
+  ),
+),
+```
+
+You can also group multiple hooks together, for example:
+
+```dart
+hooks: OidcUserManagerHooks(
+  token: OidcHookGroup(
+    // Only modifyRequest, modifyResponse hooks can be chained.
+    hooks: [
+      OidcHook(
+        modifyResponse: (response) {
+          logger.info(
+            'Modifying token response: ${response.src}',
+          );
+          return Future.value(response);
+        },
+      ),
+    ],
+    // Only a single executionHook can be defined for the group.
+    executionHook: OidcHook(
+      modifyExecution: (request, defaultExecution) async {
+        logger.info(
+          'Executing token request: ${request.request.toMap()}',
+        );
+        final response = await defaultExecution(request);
+        logger.info(
+          'Executed token request: ${response.src}',
+        );
+        return response;
+      },
+    ),
+  ),
+),
+```
+
 ##### Default Auth request parameters
 
 These are [parameters that you send with the auth request](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest), and you can either define them in the `login*` functions, or define the default values here.
@@ -210,6 +346,8 @@ These are [parameters that you send with the auth request](https://openid.net/sp
 #### httpClient
 
 We depend on [![package:http][http_image]][http_link], and you can provide your own http client which will let you intercept and modify request/response behavior.
+
+This is also where mutual-TLS gets its client certificate: pass the client from `OidcMtls.createHttpClient` (see [clientCredentials](#clientcredentials), item 6).
 
 #### keyStore
 
@@ -294,6 +432,22 @@ This can be done by calling `logout` with the following optional parameters:
 - `options`: platform-specific navigation options, which are the same as `settings.options`.
 - `extraParameters`: extra parameters to pass to the logout request.
 
+### Session Management
+
+[OpenID Connect Session Management 1.0](https://openid.net/specs/openid-connect-session-1_0.html) lets the RP poll whether the user's session at the OP is still alive, by embedding `check_session_iframe` in a frame it controls and reading back the OP's `postMessage` answer ("unchanged" / "changed" / "error"). `package:oidc` implements this **on web only** — this is a deliberate, permanent scoping decision, not a gap awaiting a native implementation:
+
+!!! Note
+    On native platforms (Android, iOS, macOS, Linux, Windows), [RFC 8252 §8.12](https://datatracker.ietf.org/doc/html/rfc8252#section-8.12) requires login to run in an **external** user-agent (the system browser), never an embedded WebView — so the app has no browser surface of its own to host `check_session_iframe` in. And even an app-controlled WebView created purely to poll the session would not work around this: [OpenID Connect Session Management 1.0 §3.2](https://openid.net/specs/openid-connect-session-1_0.html#RPiframe) computes the answer from the OP session **cookie** held by whichever user-agent is loading the iframe, and that cookie lives in the EXTERNAL browser the §8.12 login happened in — a separate, freshly-created WebView carries no such cookie and could only ever report "changed".
+
+    Detect a session that ended at the OP on native platforms through other signals instead:
+
+    - `OidcTokenRefreshFailedEvent` on `manager.events()` — a terminal automatic token-refresh failure (e.g. `invalid_grant`) surfaces the next time the token is refreshed.
+    - `OidcUserInfoFailedEvent` on `manager.events()` — a `401` from the userinfo endpoint surfaces the next time it's called.
+    - Front-Channel Logout / Back-Channel Logout, if your OP can push the logout to the app directly.
+    - [OpenID Connect Native SSO for Mobile Apps](https://openid.net/specs/openid-connect-native-sso-1_0.html), if several apps from the same vendor need to share a signed-out state.
+
+    None of these are instant the way `check_session_iframe` polling is on web — they surface on the *next* token use, not the moment the OP session actually ends.
+
 ### Listening to currentUser changes
 
 Whenever a user logs in, logs out, or a token gets refreshed automatically, an event is added to the `userChanges()` stream.
@@ -301,6 +455,20 @@ Whenever a user logs in, logs out, or a token gets refreshed automatically, an e
 This is similar to firebase auth, and can be used to track the current session.
 
 You can also get access to the current authenticated user via `currentUser` property.
+
+`userChanges()` replays the current user to every new listener, even before `init()` has completed. At that point the current user is still the initial `null`, so a listener attached before `init()` can't tell "not initialized yet" apart from "signed out".
+
+If you need that distinction, for example because you subscribe before `init()` alongside `events()` (which has to happen before `init()` to observe an `invalid_grant` while the cached session is restored), use `userChangesAfterInit()` instead. It emits nothing until `init()` completes, then emits the settled user, then every later change. Any `null` it emits means signed out:
+
+```dart
+manager.events().listen(handleEvent);
+manager.userChangesAfterInit().listen((user) {
+  // Only runs once init() has completed; null here really means signed out.
+});
+await manager.init();
+```
+
+If `init()` fails, `userChangesAfterInit()` emits the error and closes. If the manager is disposed before `init()` completes, it closes without emitting.
 
 ### Listening to events
 
@@ -319,7 +487,100 @@ manager.events().listen((event) {
 });
 ```
 
+#### Confirming logout at the OP (Session Management)
 
+When session management is enabled (`sessionManagementSettings.enabled`), the OP advertises a `check_session_iframe`, and the signed-in session has a `session_state`, `logout()` asks the OP's `check_session_iframe` once more about the session it just ended, after the OP's end-session response arrives (including a web `samePage` logout resumed on the reloaded page). The answer is reported as an `OidcEndSessionConfirmationEvent`:
+
+| `outcome` | meaning |
+| --- | --- |
+| `changed` | the expected answer after a successful logout, but not proof of it (see below). |
+| `unchanged` | the OP still considers the session alive, so the OP-side logout did not take, e.g. the End-User declined to log out of the OP ([RP-Initiated Logout 1.0 §2](https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout) lets the OP ask). This app is still logged out locally. |
+| `error` | the OP iframe answered `error` (or an unknown value), or the probe failed. |
+| `timedOut` | no answer within `sessionManagementSettings.endSessionConfirmationTimeout`. |
+
+Only `unchanged` is a reliable signal. `changed` also shows up when the logout did not happen: when the browser blocks third-party cookies or storage (Safari and Firefox block or partition the OP iframe's cookies by default), cookie-based OPs "might then return changed for every single call" ([Session Management 1.0 §5.1](https://openid.net/specs/openid-connect-session-1_0.html#ThirdPartyContent)), and changes to unrelated sessions can produce false positives ([§3.2](https://openid.net/specs/openid-connect-session-1_0.html#OPiframe)).
+
+The check runs in the background: the user is forgotten and `userChanges()` emits `null` without waiting for it, so the event usually arrives after that. The manager does not act on the outcome (it does not re-authenticate with `prompt=none`, which would sign the user back in); what to do, for example telling the user they are still signed in at the OP, is up to the app. The event is not emitted on platforms without session monitoring (everything except web), or if the manager is disposed or a new session starts before the OP answers.
+
+On web with the `samePage` navigation mode, the end-session response is handled during `init()` on the reloaded page, so the event is emitted there: subscribe to `events()` before calling `init()` to receive it.
+
+```dart
+manager.events().listen((event) {
+  if (event case OidcEndSessionConfirmationEvent(
+    outcome: OidcEndSessionConfirmationOutcome.unchanged,
+  )) {
+    // Logged out of this app, but still signed in at the OP.
+  }
+});
+```
+
+### Revoking tokens
+
+The `OidcUserManager` provides methods to revoke tokens at the authorization server, making them invalid for future use.
+
+#### revokeAccessToken
+
+Revokes the current user's access token, making it invalid for accessing protected resources.
+
+```dart
+// Revoke current user's access token and forget user
+await manager.revokeAccessToken();
+
+// Revoke specific token without forgetting user
+await manager.revokeAccessToken(
+  overrideAccessToken: 'specific_token',
+  forgetUser: false,
+);
+
+// Revoke with custom headers
+await manager.revokeAccessToken(
+  headers: {'Custom-Header': 'value'},
+  extraBodyFields: {'custom_param': 'value'},
+);
+```
+
+**Parameters:**
+- `discoveryDocumentOverride`: Optional discovery document to use instead of the default
+- `options`: Platform-specific options for the revocation request
+- `forgetUser`: Whether to forget the current user after successful revocation (defaults to `true`)
+- `overrideAccessToken`: Specific access token to revoke instead of the current user's token
+- `revocationEndpointOverride`: Custom revocation endpoint URL to use
+- `extraBodyFields`: Additional fields to include in the revocation request body
+- `headers`: Additional HTTP headers to include in the request
+
+#### revokeRefreshToken
+
+Revokes the current user's refresh token, making it invalid for obtaining new access tokens.
+
+```dart
+// Revoke current user's refresh token
+await manager.revokeRefreshToken();
+
+// Revoke specific refresh token with custom endpoint
+await manager.revokeRefreshToken(
+  overrideRefreshToken: 'specific_refresh_token',
+  revocationEndpointOverride: Uri.parse('https://custom.revoke.endpoint'),
+);
+```
+
+**Parameters:**
+- `discoveryDocumentOverride`: Optional discovery document to use instead of the default
+- `options`: Platform-specific options for the revocation request
+- `forgetUser`: Whether to forget the current user after successful revocation (defaults to `true`)
+- `overrideRefreshToken`: Specific refresh token to revoke instead of the current user's token
+- `revocationEndpointOverride`: Custom revocation endpoint URL to use
+- `extraBodyFields`: Additional fields to include in the revocation request body
+- `headers`: Additional HTTP headers to include in the request
+
+**Behavior:**
+- Both methods return early if no current user exists
+- Both methods return early if the respective token is not available to revoke
+- Both methods return early if the authorization server doesn't provide a revocation endpoint
+- Both methods call `forgetUser()` automatically after successful revocation when `forgetUser` is `true`
+- Both methods use the hooks system to allow customization of the revocation process
+
+!!! Note
+    Token revocation is a best-effort operation. Some authorization servers may not support token revocation, in which case these methods will return without error. Always check your authorization server's capabilities before relying on token revocation.
 
 ### Refreshing the token manually
 

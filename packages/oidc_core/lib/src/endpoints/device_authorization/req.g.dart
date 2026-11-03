@@ -7,9 +7,7 @@ part of 'req.dart';
 // **************************************************************************
 
 Map<String, dynamic> _$OidcDeviceAuthorizationRequestToJson(
-        OidcDeviceAuthorizationRequest instance) =>
-    <String, dynamic>{
-      if (OidcInternalUtilities.joinSpaceDelimitedList(instance.scope)
-          case final value?)
-        'scope': value,
-    };
+  OidcDeviceAuthorizationRequest instance,
+) => <String, dynamic>{
+  'scope': ?OidcInternalUtilities.joinSpaceDelimitedList(instance.scope),
+};

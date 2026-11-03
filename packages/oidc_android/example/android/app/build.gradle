@@ -1,6 +1,5 @@
 plugins {
     id "com.android.application"
-    id "org.jetbrains.kotlin.android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -24,15 +23,18 @@ if (flutterVersionName == null) {
 
 android {
     namespace 'com.bdayadev.oidc_example'
+
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
     compileOptions {
-      sourceCompatibility JavaVersion.VERSION_1_8
-      targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
-    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }    
 
     defaultConfig {
         applicationId "com.bdayadev.oidc_example"
@@ -41,9 +43,12 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders += [
-          'appAuthRedirectScheme': 'com.bdayadev.oidc_example'
-        ]        
+        // Scheme of this app's redirect_uri. Wires up the plugin's redirect
+        // receiver, which is the capture path on every browser that lacks Auth
+        // Tab support — i.e. anything but Chrome 137+.
+        // applicationId is com.bdayadev.oidc_example, but a URI scheme cannot
+        // contain '_' (RFC 3986), so the '_' becomes '.' here.
+        manifestPlaceholders += ['oidcRedirectScheme': 'com.bdayadev.oidc.example']
     }
 
     buildTypes {
@@ -57,4 +62,10 @@ android {
 
 flutter {
     source '../..'
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }

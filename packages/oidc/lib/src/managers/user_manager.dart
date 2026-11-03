@@ -13,6 +13,7 @@ class OidcUserManager extends OidcUserManagerBase {
     required super.settings,
     super.httpClient,
     super.keyStore,
+    super.id,
   });
 
   ///
@@ -23,6 +24,7 @@ class OidcUserManager extends OidcUserManagerBase {
     required super.settings,
     super.httpClient,
     super.keyStore,
+    super.id,
   }) : super.lazy();
 
   @override
@@ -60,7 +62,7 @@ class OidcUserManager extends OidcUserManagerBase {
 
   @override
   Stream<OidcFrontChannelLogoutIncomingRequest>
-      listenToFrontChannelLogoutRequests(
+  listenToFrontChannelLogoutRequests(
     Uri listenOn,
     OidcFrontChannelRequestListeningOptions options,
   ) {
@@ -87,4 +89,8 @@ class OidcUserManager extends OidcUserManagerBase {
   ) {
     return OidcFlutter.prepareForRedirectFlow(options);
   }
+
+  @override
+  Stream<OidcEvent> listenToNativeBrowserEvents() =>
+      OidcFlutter.nativeBrowserEvents();
 }

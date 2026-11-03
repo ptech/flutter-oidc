@@ -48,11 +48,17 @@ mixin OidcDesktop on OidcPlatform {
       successfulPageResponse: platformOpts.successfulPageResponse,
       methodMismatchResponse: platformOpts.methodMismatchResponse,
       notFoundResponse: platformOpts.notFoundResponse,
+      // Only pay for the fragment relay when the response actually arrives in
+      // one. A code flow answers on the first request as it always has.
+      captureFragment: responseArrivesInFragment(requestParameters),
     );
     final serverCompleter = Completer<HttpServer>();
+    final ts = platformOpts.flowTimeoutSeconds;
+    final timeout = (ts != null && ts > 0) ? Duration(seconds: ts) : null;
     //don't await the responseUriFuture until we launch the url.
     final responseUriFuture = listener.listenForSingleResponse(
       serverCompleter: serverCompleter,
+      timeout: timeout,
     );
     // wait until the server starts listening and we get a port.
     final server = await serverCompleter.future;
@@ -71,17 +77,34 @@ mixin OidcDesktop on OidcPlatform {
       },
     );
 
-    if (!await canLaunchUrl(uri)) {
+    final didLaunch = await launchAuthUrl(
+      uri,
+      logRequestDesc: logRequestDesc,
+      platformOpts: platformOpts,
+    );
+    if (!didLaunch) {
       logger.warning(
-        'Might not be able to launch the $logRequestDesc request url: $uri',
+        'Failed to launch the $logRequestDesc request url: $uri',
       );
     }
-
-    // launch the uri
-    await launchUrl(uri);
-
     // wait for a response from the server listener.
-    final responseUri = await responseUriFuture;
+    final Uri? responseUri;
+    try {
+      responseUri = await responseUriFuture;
+    } on TimeoutException catch (e, st) {
+      logger.warning(
+        'The $logRequestDesc flow timed out after $ts seconds without '
+        'receiving a redirect on the loopback listener.',
+        e,
+        st,
+      );
+      throw OidcException(
+        'The $logRequestDesc flow timed out after $ts seconds without '
+        'receiving a redirect on the loopback listener.',
+        internalException: e,
+        internalStackTrace: st,
+      );
+    }
     if (responseUri == null) {
       return null;
     }
@@ -91,6 +114,34 @@ mixin OidcDesktop on OidcPlatform {
       //try bringing the window to front, swallow errors if it fails.
     }
     return responseUri;
+  }
+
+  /// launches the auth url.
+  Future<bool> launchAuthUrl(
+    Uri uri, {
+    required String logRequestDesc,
+    required OidcPlatformSpecificOptions_Native platformOpts,
+  }) async {
+    if (platformOpts.launchUrl case final urlLauncher?) {
+      return urlLauncher(uri);
+    }
+    if (!await canLaunchUrl(uri)) {
+      logger.warning(
+        'Might not be able to launch the $logRequestDesc request url: $uri',
+      );
+    }
+    // launch the uri
+    final launchRes = await launchUrl(
+      uri,
+    );
+    if (!launchRes) {
+      logger.severe(
+        'Failed to launch the $logRequestDesc request url: $uri',
+      );
+    } else {
+      logger.info('Launched the $logRequestDesc request url: $uri');
+    }
+    return launchRes;
   }
 
   @override
@@ -184,4 +235,39 @@ mixin OidcDesktop on OidcPlatform {
   }) {
     return const Stream.empty();
   }
+}
+
+/// Whether the authorization response for [requestParameters] will be
+/// delivered in the URI fragment rather than the query string.
+///
+/// OAuth 2.0 Multiple Response Type Encoding Practices, section 2: `code`
+/// alone defaults to the query encoding; every other response type defaults to
+/// the fragment encoding. An explicit `response_mode` overrides that default.
+///
+/// This matters on desktop because a fragment never reaches the loopback
+/// server -- the browser strips it before sending -- so hybrid and implicit
+/// responses are lost unless the listener runs its relay. The relay costs an
+/// extra round trip and needs JavaScript, so it is enabled only for the flows
+/// that cannot work without it.
+@visibleForTesting
+bool responseArrivesInFragment(Map<String, dynamic> requestParameters) {
+  final mode = requestParameters[OidcConstants_AuthParameters.responseMode];
+  if (mode is String && mode.isNotEmpty) {
+    return mode == OidcConstants_AuthorizeRequest_ResponseMode.fragment;
+  }
+  final rawType = requestParameters[OidcConstants_AuthParameters.responseType];
+  final types = switch (rawType) {
+    final String s => s.split(RegExp(r'\s+')),
+    final List<dynamic> l => l.map((e) => e.toString()),
+    _ => const <String>[],
+  }
+      .where((e) => e.isNotEmpty)
+      .toSet();
+
+  if (types.isEmpty) {
+    return false;
+  }
+  // `code` alone -> query. `none` alone -> nothing to capture either way.
+  return !(types.length == 1 &&
+      (types.contains('code') || types.contains('none')));
 }

@@ -63,6 +63,10 @@ The base class for all events, this contains an `at` property that stores when t
 
 Occurs before a user is forgotten, either via `forgetUser()` or via `logout()`.
 
+### OidcEndSessionConfirmationEvent
+
+Occurs after an RP-initiated `logout()` when session management is enabled, the OP advertises a `check_session_iframe` and the ended session had a `session_state`. It carries what the OP's `check_session_iframe` answered for the ended session (OpenID Connect Session Management 1.0 §3.1): `outcome` is `changed` (the expected answer after a successful logout, but not proof of it: blocked third-party cookies can make the iframe answer `changed` for every call, §5.1, and unrelated sessions can cause false positives, §3.2), `unchanged` (the OP session is still alive, so the OP-side logout did not take; the only reliable signal), `error`, or `timedOut` (see `OidcSessionManagementSettings.endSessionConfirmationTimeout`). Logout does not wait for it, and the manager does not act on it. On a resumed web `samePage` logout it is emitted during `init()`, so subscribe to `events()` before calling `init()`.
+
 ## OidcPkcePair
 
 you can use this to generate PKCE key pairs.
@@ -111,15 +115,21 @@ A wrapper around `OidcToken` that requires the existence of `id_token` to unders
 to create a user, you should call `fromIdToken` which takes the following parameters:
 
 - `OidcToken token`: the source token, this MUST contain `idToken`.
-- `strictVerification`: if true, will throw an error if we fail to verify the signature of the JWT id token.
-!!! Warning
-    The current jose package we use is unmaintained, and has multiple problems, so setting `strictVerification: true` might throw random errors.
+- `keystore`: the store that contains information about the public json web keys. When provided, signature
+  verification is **always strict** (fail-closed) — an id_token whose signature cannot be verified throws;
+  there is no opt-out. When omitted, the id_token is parsed but left unverified.
 
-    you MUST test if it works before using it in production.
+    !!! Info "Key rotation"
+        A `kid` absent from the currently-loaded JWKS triggers one rate-limited, cache-busting JWKS refetch
+        before failing (OpenID Connect Core 1.0 §10.1.1), so a routine signing-key rotation at the OP does not
+        cause a spurious verification failure.
 
-    see this issue for more information: [oidc#9](https://github.com/Bdaya-Dev/oidc/issues/9).
-
-- `keystore`: the store that contains information about the public json web keys.
+    !!! Warning "HS256 id_tokens"
+        Some OPs (e.g. Auth0, for confidential clients by default) sign id_tokens with the symmetric `HS256`
+        algorithm, keyed by the client secret rather than a JWKS-published key. Verifying these requires an
+        `oct` key derived from the client secret to be present in `keystore` — `OidcUserManagerBase.init()`
+        does this automatically when `clientCredentials` carries a `clientSecret`. Calling `fromIdToken`
+        directly (bypassing the manager) must add that key itself.
 - `attributes`: extra attributes to put with the user for customization.
 - `userInfo`: the response from the `/userinfo` endpoint.
 
@@ -134,6 +144,140 @@ this is done using these functions:
     this is used in refresh token rotation to change the latest token the user has.
 - `setAttributes`: merges input attributes with existing attributes.
 - `clearAttributes`: removes all attributes.
+
+When a response for a signed-in user has no `id_token` (typically a refresh, which OpenID Connect Core §12.2 allows),
+`replaceToken` keeps the previous id_token and records that in the token: `OidcToken.idTokenRetainedFromPriorResponse` is
+`true`. The flag is persisted with the token, and `OidcToken.fromResponse` never takes it from a server response.
+
+## ID token validation
+
+`OidcUserManagerBase.validateUser` checks an id_token's claims and returns the list of problems it found. Which checks apply
+can depend on the flow that produced the token, so `validateUser`, `validateAndSaveUser` and `createUserFromToken` take an
+`OidcIdTokenValidationContext`:
+
+```dart
+const OidcIdTokenValidationContext({
+  OidcIdTokenSource source = OidcIdTokenSource.tokenEndpoint,
+  String? authorizationCode, // the code returned with the id_token, checked against c_hash
+  String? accessToken,       // the access_token returned with the id_token, checked against at_hash
+  Duration? maxAge,          // the max_age that was requested, checked against auth_time
+});
+```
+
+The hash rules are judged from the response's own tokens. When a user is already signed in, the user built for a new
+response keeps the previous session's access_token if the response returned none, so the access_token to check is passed in
+the context. For `authorizationEndpoint`, `accessToken: null` means the response returned no access_token (`id_token`,
+`code id_token`). For the other sources, `null` falls back to the user's own access_token. `createUserFromToken` fills
+`accessToken` in from the response token it is given.
+
+The `at_hash` and `c_hash` rules per `OidcIdTokenSource`:
+
+| source | `at_hash` | `c_hash` |
+|---|---|---|
+| `authorizationEndpoint` (implicit, hybrid front channel) | required when the response returned an access_token, and must match it | required when the response returned a code, and must match it |
+| `tokenEndpoint` (code exchange, password, device code) | checked when present | checked when present |
+| `refresh` | checked when present, only if the refresh returned a new id_token | same |
+| `storedSession` (`init()` revalidating the stored session) | checked when present, unless the stored id_token was retained from an earlier response | same |
+
+An id_token retained from an earlier response (`idTokenRetainedFromPriorResponse`) was not issued with the current tokens,
+so its hashes are never required. A refresh, and the stored session it produced, do not compare them either (§12.2). Any
+other response that kept the previous id_token, such as a password re-login whose response has no id_token, still
+compares a hash the kept id_token carries, as before.
+
+### When validation fails
+
+`validateAndSaveUser` returns `null` and clears the pending nonce. It does not touch the stored session or `currentUser`, so
+a login or refresh response that fails validation leaves an already signed-in session in place.
+
+A stored session that fails revalidation during `init()` is handled by the cached-token loader. It calls
+`OidcUserManagerSettings.shouldRemoveInvalidToken` (by default the session is removed unless `supportOfflineAuth` is on). If
+the policy keeps it, the token stays in the store. Either way no user is signed in with it: if `init()` had already signed a
+user in with that session (by refreshing it, or by cache-first restoring it), that user is signed out again.
+
+### Migrating from 3.x
+
+These are breaking changes for code that subclasses `OidcUserManagerBase`:
+
+- `validateUser({user, metadata, authorizationCode, maxAge})` is now `validateUser({user, metadata, context})`.
+- `validateAndSaveUser({user, metadata, authorizationCode, maxAge, reactToUserInfoUnauthorized})` is now
+  `validateAndSaveUser({user, metadata, context, reactToUserInfoUnauthorized})`.
+- `createUserFromToken({..., authorizationCode, maxAge, ...})` is now `createUserFromToken({..., context, ...})`.
+- `OidcIdTokenValidationContext.accessToken` is the access_token returned with the id_token. For the
+  `authorizationEndpoint` source, `at_hash` is checked against it and never against the validated user's token.
+
+Pass the old arguments through the context:
+
+```dart
+// before
+validateUser(user: user, metadata: metadata, authorizationCode: code, maxAge: maxAge);
+// after
+validateUser(
+  user: user,
+  metadata: metadata,
+  context: OidcIdTokenValidationContext(authorizationCode: code, maxAge: maxAge),
+);
+```
+
+If you call `validateUser` or `validateAndSaveUser` for an id_token that came from the authorization endpoint, pass
+`source: OidcIdTokenSource.authorizationEndpoint` and the access_token of that response as `accessToken` to get the
+required-hash checks. Without `accessToken`, that source treats the response as having returned no access_token.
+
+Behavior changes:
+
+- `validateAndSaveUser` no longer deletes the stored token, user info and attributes when validation fails. If your subclass
+  relied on that, remove the session yourself (for example with `forgetUser()`).
+- `shouldRemoveInvalidToken` returning `false` now really keeps the stored token. Before, it had already been deleted.
+- An implicit `id_token token` response whose id_token has no `at_hash` is now rejected (OpenID Connect Core §3.2.2.10).
+- A refresh that keeps the old id_token no longer fails the `at_hash` check, either right away or when the app restarts.
+- `at_hash` is compared with the access_token of the response that returned the id_token, not with one a signed-in user
+  kept from an earlier response.
+- When `init()` refreshes the stored session and the revalidation that follows fails, the refreshed user is now signed out
+  even if `shouldRemoveInvalidToken` keeps the session in the store.
+
+## Discovery document issuer validation
+
+Per OIDC Discovery 1.0 §4.3 / RFC 8414 §3.3, `OidcUserManagerSettings.strictIssuerValidation` (default `true`) rejects a
+discovery document whose `issuer` does not match the issuer it was expected to describe. A rejected document is neither
+persisted nor kept: after a failed `init()` every flow (including `getAccessToken()`, which used to return `null`)
+throws instead of building a request, and a rejected background (cache-first) refresh keeps the previously validated
+document and still re-verifies the restored session against it. Set `OidcUserManagerSettings.expectedIssuer` when a provider's issuer cannot be derived
+from the discovery URL; `strictIssuerValidation: false` only warns instead of rejecting, for providers `expectedIssuer`
+cannot describe either.
+
+### Azure AD B2C
+
+With B2C's default "Issuer (iss) claim" setting, the discovery `issuer` is not the discovery URL's prefix: the tenant
+domain is replaced by the tenant GUID, the policy segment is dropped, and a trailing slash is added. For example,
+`https://fabrikamb2c.b2clogin.com/fabrikamb2c.onmicrosoft.com/B2C_1_susi/v2.0/.well-known/openid-configuration` returns
+`"issuer": "https://fabrikamb2c.b2clogin.com/775527ff-9a37-4307-8b3d-cc311f58d925/v2.0/"`. See Microsoft's
+[token compatibility settings](https://learn.microsoft.com/azure/active-directory-b2c/tokens-overview#compatibility) and,
+for custom policies, [`IssuanceClaimPattern`](https://learn.microsoft.com/azure/active-directory-b2c/jwt-issuer-technical-profile).
+
+Options, most to least preferred:
+
+1. Switch the user flow/custom policy's "Issuer (iss) claim" (`IssuanceClaimPattern` in custom policies) to
+   `AuthorityWithTfp`, and use the matching `/tfp/.../.well-known/openid-configuration` discovery URL. The resulting
+   issuer (`https://<host>/tfp/<tenant-GUID>/<policy>/v2.0/`) is exactly what that URL derives to, so no `expectedIssuer`
+   is needed. This is Microsoft's documented option for OpenID Connect Discovery 1.0 compliance. The comparison is
+   case-sensitive, so the discovery URL's tenant and policy segments must use the casing B2C emits in the issuer
+   (otherwise set `expectedIssuer`).
+2. Keep B2C's default issuer format and set `expectedIssuer` to the actual issuer B2C returns (as in the example above).
+3. Last resort: set `strictIssuerValidation: false`.
+
+### Microsoft Entra ID multi-tenant (`/common`, `/organizations`)
+
+Entra's multi-tenant discovery `issuer` is a template (`https://login.microsoftonline.com/{tenantid}/v2.0`) rather than a
+concrete URL. `OidcUtils.discoveryIssuerMatches` matches that template against an `expectedIssuer` pinned to a concrete
+tenant (`https://login.microsoftonline.com/<tenant>/v2.0`), so pinning `expectedIssuer` is all a multi-tenant RP needs; see
+[#389](https://github.com/Bdaya-Dev/oidc/issues/389).
+
+### Other Entra authorities
+
+| Authority | Discovery `issuer` | What to set |
+| --- | --- | --- |
+| Tenant by domain name, e.g. `.../contoso.onmicrosoft.com/v2.0` | `https://login.microsoftonline.com/<tenant-GUID>/v2.0` | Use the GUID authority, or `expectedIssuer` = that issuer |
+| `.../consumers/v2.0` | `https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0` (concrete, not a template) | `expectedIssuer` = that issuer |
+| v1 `https://login.microsoftonline.com/common` | `https://sts.windows.net/{tenantid}/` | `expectedIssuer` = `https://sts.windows.net/<tenant-GUID>/` |
 
 ## OidcException
 

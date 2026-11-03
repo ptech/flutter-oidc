@@ -1,9 +1,15 @@
 export 'constants.dart';
 export 'converters.dart';
+export 'dpop/_exports.dart';
 export 'endpoints/_exports.dart';
+export 'hooks/_exports.dart';
+export 'jar/_exports.dart';
 export 'managers/_exports.dart';
 export 'memory_state_store.dart';
 export 'models/_exports.dart';
+export 'mtls/mtls_http_client.dart';
 export 'pkce.dart';
 export 'state_store.dart';
 export 'utils.dart';
+export 'utils/offline_auth_error_handler.dart';
+export 'utils/token_hash.dart';
