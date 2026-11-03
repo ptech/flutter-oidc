@@ -15,9 +15,9 @@ dependencies:
   logging: ^1.2.0
   oidc_android:
     path: ../
-  oidc_core: ^4.0.0
-  oidc_default_store: ^2.0.0
-  oidc_platform_interface: ^1.0.4
+  oidc_core: ^5.0.0
+  oidc_default_store: ^3.0.0
+  oidc_platform_interface: ^2.0.0
 
 dev_dependencies:
   flutter_driver:

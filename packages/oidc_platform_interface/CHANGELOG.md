@@ -1,3 +1,25 @@
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **REFACTOR**: minor lints and refactors. ([5ab9af70](https://github.com/Bdaya-Dev/oidc/commit/5ab9af70140be2a11f54d62a9d93c9c6edc9e554))
+ - **FIX**: resolve all four library bugs; drive honest unit coverage to ~95% ([#368](https://github.com/Bdaya-Dev/oidc/issues/368)). ([c86bee17](https://github.com/Bdaya-Dev/oidc/commit/c86bee17189a0a70fee947c685e91a55062b1d35))
+ - **FIX**(oidc_platform_interface): declare meta as a direct dependency. ([21b79a43](https://github.com/Bdaya-Dev/oidc/commit/21b79a436649435c97221a4adf29321c9873d2bd))
+ - **FIX**(native): harden iOS threading, simplify Android redirect to one-line setup. ([a7553f32](https://github.com/Bdaya-Dev/oidc/commit/a7553f326c1d67ac2bd057b0864688d73df24661))
+ - **FEAT**(observability): native browser events via the existing OidcEvent stream (Phase 3). ([91d1f5bd](https://github.com/Bdaya-Dev/oidc/commit/91d1f5bdfa1526aec170474181ec71ad1bf38c59))
+ - **FEAT**: implement the session management spec. ([9a133b3b](https://github.com/Bdaya-Dev/oidc/commit/9a133b3bb511c935edeca0762bfc6be365e812f9))
+ - **FEAT**: support logout. ([09504fa3](https://github.com/Bdaya-Dev/oidc/commit/09504fa310605e2d59ce736d7d3cc99ecbbaab13))
+ - **DOCS**: remove logo branding from screenshots. ([2acf65d3](https://github.com/Bdaya-Dev/oidc/commit/2acf65d34fb47c0449653a73373168df3deb1735))
+ - **DOCS**: Add openid certification mark ([#240](https://github.com/Bdaya-Dev/oidc/issues/240)). ([89313199](https://github.com/Bdaya-Dev/oidc/commit/8931319937b9c263abae9ac873433dd6bd5fa637))
+ - **BREAKING** **FIX**: Opening in new tab not working reliably in Safari for iOS [#31](https://github.com/Bdaya-Dev/oidc/issues/31). ([2e30028b](https://github.com/Bdaya-Dev/oidc/commit/2e30028b79f7ed1e7835d4656278b022a9c0ec62))
+ - **BREAKING** **FEAT**: merge oidc_ios + oidc_macos into a unified oidc_darwin plugin. ([db73858e](https://github.com/Bdaya-Dev/oidc/commit/db73858e71b3b869326867b05b9d1ead3629acb9))
+ - **BREAKING** **FEAT**(native): migrate native transport to Pigeon + automate codegen. ([fc7606f3](https://github.com/Bdaya-Dev/oidc/commit/fc7606f3329cc493281a438ff76482436b018709))
+ - **BREAKING** **FEAT**(oidc_macos): first-party ASWebAuthenticationSession; drop flutter_appauth. ([dc13f411](https://github.com/Bdaya-Dev/oidc/commit/dc13f411a3bfca4572a0f0e8fea2705365314d3c))
+ - **BREAKING** **FEAT**: Support WASM ([#253](https://github.com/Bdaya-Dev/oidc/issues/253)). ([8b2931ef](https://github.com/Bdaya-Dev/oidc/commit/8b2931ef64c7b25609db563e3d14bf37f5504922))
+ - **BREAKING** **CHORE**: v1 dependency upgrade + drop the pigeon global-tool wrapper. ([45b62a3e](https://github.com/Bdaya-Dev/oidc/commit/45b62a3ef3f5b42cfb590111c9e37e144bbc11b0))
+ - **BREAKING** **CHANGE**: all packages. ([743f8f08](https://github.com/Bdaya-Dev/oidc/commit/743f8f0808a1bcc222e14150db59ac0c78c7340d))
+ - **BREAKING** **CHANGE**: new platform interface. ([791c01b8](https://github.com/Bdaya-Dev/oidc/commit/791c01b8ac25898897d66620373efb63e20d603b))
+
 ## 1.0.4
 
  - Update a dependency to the latest release.
